@@ -4,7 +4,8 @@ description = "MudSort as an openAC-rust WebAssembly plugin: sorts a pack's item
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+# MIT, except src/alphanum.rs (a port of mudsort's LGPL AlphanumComparator.cs).
+license = "MIT AND LGPL-2.1-or-later"
 publish.workspace = true
 
 [lib]

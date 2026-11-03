@@ -16,5 +16,7 @@ scripts/check.ps1   # format, lint, test, build target/wasm32-unknown-unknown/re
 
 `tools/golden/run.ps1` regenerates the golden files the tests compare
 against by running mudsort's own code on .NET Framework. Deliberate
-differences from mudsort are in `DIVERGENCES.md`. MIT; see `LICENSE` and
-`NOTICE.md`.
+differences from mudsort are in `DIVERGENCES.md`. MIT (`LICENSE`), except
+`crates/mudsort/src/alphanum.rs`, the port of mudsort's LGPL
+`AlphanumComparator.cs`, which is LGPL-2.1-or-later (`LICENSE-LGPL-2.1`);
+see `NOTICE.md`.

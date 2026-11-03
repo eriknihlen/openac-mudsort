@@ -1,3 +1,24 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+//
+// This one file is under the GNU Lesser General Public License, version 2.1
+// or (at your option) any later version (LICENSE-LGPL-2.1); the rest of the
+// repository is MIT. It is a port of mudsort's `AlphanumComparator.cs`,
+// which carries that licence:
+//
+// - the Alphanum Algorithm is Dave Koelle's (http://www.DaveKoelle.com);
+// - the C# version, based on his Java implementation, was contributed by
+//   Jonathan Ruckwood <jonathan.ruckwood@gmail.com>;
+// - adapted by Dominik Hurnaus <dominik.hurnaus@gmail.com> to sort words
+//   where one word starts with another correctly, and a little faster;
+// - used in mudsort by mudzereli (https://github.com/mudzereli/mudsort);
+// - ported to Rust for MudSort, the openAC-rust port of mudsort, by
+//   Erik Nihlén (2026).
+//
+// This library is distributed in the hope that it will be useful, but
+// WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Lesser
+// General Public License for more details.
+
 //! mudsort's string order (`AlphanumComparator.cs`, Dave Koelle's
 //! "alphanum" algorithm): each string is cut into runs of digits and runs of
 //! everything else; two digit runs compare as numbers, anything else as
