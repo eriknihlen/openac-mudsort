@@ -89,7 +89,7 @@
   <group layout="column" gap="8" grow="1" visible="{RecipeTab}">
     <label text="Ordered by the first key; ties go to the next, and so on."
            color="theme:muted|#FFC7B98F" />
-    <group layout="column" h="170" scroll="y"
+    <group layout="column" h="170" shrink="0" scroll="y"
            background="theme:field|#FF0C0906" border="theme:border|#FF61573B">
       <repeat items="{Recipe}">
         <group layout="row" gap="6" align="center" padding="3 6">
