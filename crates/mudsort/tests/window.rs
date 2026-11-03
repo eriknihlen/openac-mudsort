@@ -13,7 +13,7 @@ use openac_plugin::calls;
 use openac_plugin::items::InventoryItem;
 use openac_plugin::ui::{TypedBindingKind, TypedValue};
 use openac_plugin::world::{ObjectChange, ObjectChangeKind, ObjectClass, SelectionChange};
-use openac_plugin::{Event, LogLevel};
+use openac_plugin::{Event, Import, LogLevel};
 use sim::{CHEST, HORAN, Harness, ME, PACK1, PACK2, Sim};
 
 const C: u32 = 0x8000_2001;
@@ -134,7 +134,7 @@ fn from_and_to_list_the_containers_and_set_the_source_and_destination() {
     // The open chest joins the list.
     h.sim.open_chest();
     h.send(Event::ContainerOpened(CHEST));
-    h.tick();
+    h.settle();
     assert_eq!(h.texts("FromItems").last().unwrap(), "Open: Chest");
     h.type_text("SetFrom", "Open: Chest");
     assert_eq!(h.plugin.source(), CHEST);
@@ -204,7 +204,7 @@ fn the_class_and_name_filters_change_the_preview() {
 
     // A filter /ms set ocfilter gave that is none of the choices.
     h.ms("set ocfilter ge");
-    h.tick();
+    h.settle();
     assert_eq!(h.text("ClassSelected"), "Custom: ge");
     assert_eq!(h.texts("ClassItems").last().unwrap(), "Custom: ge");
     assert_eq!(h.texts("RowNames").len(), 3);
@@ -294,7 +294,7 @@ fn the_preview_follows_the_inventory_and_a_quiet_tick_sends_nothing() {
         changed_fields: 0,
         current: created,
     }));
-    h.tick();
+    h.settle();
     assert_eq!(
         h.texts("RowNames"),
         ["Breastplate", "Gem D", "Gem A", "Gem B", "Gem C"]
@@ -333,7 +333,7 @@ fn start_and_stop_from_the_button_drive_the_run_and_the_meter() {
             break;
         }
     }
-    h.tick();
+    h.settle();
     assert_eq!(h.plugin.sorter().phase(), Phase::Moving);
     assert_eq!(h.text("Status"), "sorting…");
     assert_eq!(h.text("MeterText"), "Moving 1 of 3 to Pack 1 · Pack 1");
@@ -341,8 +341,8 @@ fn start_and_stop_from_the_button_drive_the_run_and_the_meter() {
 
     h.run(40);
     assert_eq!(h.plugin.sorter().phase(), Phase::Done);
-    // The last move's answer ended the run; the next tick shows it.
-    h.tick();
+    // The last move's answer ended the run; the next refresh shows it.
+    h.settle();
     assert_eq!(h.text("RunLabel"), "Sort again");
     assert_eq!(
         h.text("MeterText"),
@@ -361,7 +361,7 @@ fn start_and_stop_from_the_button_drive_the_run_and_the_meter() {
 fn a_run_that_cannot_start_says_why() {
     let mut h = window();
     h.ms("set source 12345");
-    h.tick();
+    h.settle();
     assert!(h.text("MeterText").starts_with("Cannot sort: the source"));
     assert_eq!(h.text("FromSelected"), "(none)");
     h.click("Run");
@@ -378,16 +378,17 @@ fn a_run_that_cannot_start_says_why() {
 fn recipe_edits_update_the_sort_string_and_are_saved() {
     let mut h = window();
     h.type_text("SetSortString", "OC,AL-");
+    assert_eq!(
+        h.item_field("Chips", "Label"),
+        ["Object class, low first", "Armor level, high first"]
+    );
+    h.click("ShowRecipe");
     assert_eq!(h.item_field("Recipe", "Code"), ["OC", "AL"]);
     assert_eq!(
         h.item_field("Recipe", "Direction"),
         ["Low to high", "High to low"]
     );
     assert_eq!(h.item_field("Recipe", "Category"), ["Computed", "Number"]);
-    assert_eq!(
-        h.item_field("Chips", "Label"),
-        ["Object class, low first", "Armor level, high first"]
-    );
 
     h.click("Recipe[1]/Flip");
     assert_eq!(sort_string(&h), "OC,AL");
@@ -402,7 +403,9 @@ fn recipe_edits_update_the_sort_string_and_are_saved() {
     h.click("Chips[1]/Flip");
     assert_eq!(sort_string(&h), "AL,NM-");
     assert_eq!(h.text("SortString"), "AL,NM-");
+    h.click("ShowSort");
     assert_eq!(h.text("Column1"), "Name");
+    h.click("ShowRecipe");
 
     h.act("SetReverse", Av::Bool(true));
     assert!(h.plugin.settings().reverse);
@@ -422,6 +425,7 @@ fn recipe_edits_update_the_sort_string_and_are_saved() {
 #[test]
 fn a_sort_string_with_an_unknown_code_shows_the_warning() {
     let mut h = window();
+    h.click("ShowRecipe");
     assert!(!h.flag("HasUnknownCodes"));
     h.type_text("SetSortString", "OC,ZZ,AL-");
     assert_eq!(sort_string(&h), "OC,ZZ,AL-");
@@ -437,6 +441,7 @@ fn a_sort_string_with_an_unknown_code_shows_the_warning() {
 #[test]
 fn the_key_picker_lists_keys_not_in_the_recipe_by_category_and_search() {
     let mut h = window();
+    h.click("ShowRecipe");
     let common = h.item_field("Available", "Code");
     assert!(common.contains(&"OC".to_owned()));
     assert!(!common.contains(&"AL".to_owned()), "AL is in the recipe");
@@ -468,6 +473,7 @@ fn the_key_picker_lists_keys_not_in_the_recipe_by_category_and_search() {
 #[test]
 fn presets_save_load_and_delete() {
     let mut h = window();
+    h.click("ShowPresets");
     let names = h.item_field("Presets", "Name");
     assert_eq!(names, ["Everything", "Saved 1", "Saved 2", "Saved 3"]);
 
@@ -501,6 +507,7 @@ fn presets_save_load_and_delete() {
     );
     assert_eq!(h.plugin.settings().presets.len(), 5);
 
+    h.click("ShowPresets");
     h.click("Presets[1]/Delete");
     assert_eq!(
         h.item_field("Presets", "Name"),
@@ -512,6 +519,7 @@ fn presets_save_load_and_delete() {
 #[test]
 fn the_options_switches_are_saved() {
     let mut h = window();
+    h.click("ShowOptions");
     assert!(h.flag("IdentifyOnLogin"));
     assert!(h.flag("Announce"));
     h.act("SetIdentifyOnLogin", Av::Bool(false));
@@ -528,15 +536,18 @@ fn the_options_switches_are_saved() {
 #[test]
 fn a_preview_row_or_the_world_selection_fills_the_inspector() {
     let mut h = window();
+    h.click("ShowOptions");
     assert_eq!(h.text("InspectName"), "Nothing selected");
     assert_eq!(h.value("InspectIcon"), TypedValue::Uint(0));
 
+    h.click("ShowSort");
     h.act("SelectRow", Av::Int(1));
     assert_eq!(h.plugin.window().unwrap().inspected(), Some(A));
+    assert_eq!(h.value("PreviewSelected"), TypedValue::Int(1));
+    h.click("ShowOptions");
     assert_eq!(h.text("InspectName"), "Gem A");
     assert_eq!(h.text("InspectState"), "Gem · identified");
     assert_eq!(h.value("InspectIcon"), TypedValue::Uint(A));
-    assert_eq!(h.value("PreviewSelected"), TypedValue::Int(1));
     let codes = h.item_field("Inspect", "Code");
     let values = h.item_field("Inspect", "Value");
     let al = codes.iter().position(|c| c == "AL").unwrap();
@@ -548,7 +559,7 @@ fn a_preview_row_or_the_world_selection_fills_the_inspector() {
         previous: Some(A),
         selected: Some(B),
     }));
-    h.tick();
+    h.settle();
     assert_eq!(h.text("InspectName"), "Gem B");
     assert_eq!(h.text("InspectState"), "Gem · not identified yet");
     // Selecting a player leaves the Inspector on the item.
@@ -556,7 +567,7 @@ fn a_preview_row_or_the_world_selection_fills_the_inspector() {
         previous: Some(B),
         selected: Some(HORAN),
     }));
-    h.tick();
+    h.settle();
     assert_eq!(h.text("InspectName"), "Gem B");
 }
 
@@ -565,6 +576,7 @@ fn plus_in_the_inspector_adds_the_key() {
     let mut h = window();
     h.type_text("SetSortString", "OC");
     h.act("SelectRow", Av::Int(0));
+    h.click("ShowOptions");
     let codes = h.item_field("Inspect", "Code");
     let can_add = h.item_field("Inspect", "CanAdd");
     let at = |code: &str| codes.iter().position(|c| c == code).unwrap();
@@ -583,6 +595,7 @@ fn plus_in_the_inspector_adds_the_key() {
 fn an_item_given_away_leaves_the_inspector_and_the_preview() {
     let mut h = window();
     h.act("SelectRow", Av::Int(0));
+    h.click("ShowOptions");
     assert_eq!(h.text("InspectName"), "Breastplate");
     h.sim
         .owned
@@ -594,7 +607,180 @@ fn an_item_given_away_leaves_the_inspector_and_the_preview() {
         changed_fields: 0,
         current: None,
     }));
-    h.tick();
+    h.settle();
     assert_eq!(h.text("InspectName"), "Nothing selected");
+    h.click("ShowSort");
     assert_eq!(h.texts("RowNames"), ["Gem A", "Gem B", "Gem C"]);
+}
+
+#[test]
+fn a_run_reads_nothing_more_while_it_waits_and_redraws_a_few_times_a_second() {
+    let mut h = window();
+    h.type_text("SetClass", "Gem");
+    h.type_text("SetTo", "Pack 1 · Pack 1 · 0 of 24");
+    h.click("Run");
+    for _ in 0..40 {
+        h.tick();
+        if let Some(event) = h.sim.answer_appraisal() {
+            h.send(event);
+        }
+        if h.sim.in_flight.is_some() {
+            break;
+        }
+    }
+    assert_eq!(h.plugin.sorter().phase(), Phase::Moving);
+    h.settle();
+    // The first move is in flight and unanswered: nothing changes, so the
+    // window reads nothing and pushes nothing.
+    let owned = h.calls(Import::ItemsOwned);
+    let properties = h.calls(Import::ItemsProperties);
+    let pushes = h.pushes();
+    for _ in 0..40 {
+        h.tick();
+    }
+    assert_eq!(h.calls(Import::ItemsOwned), owned);
+    assert_eq!(h.calls(Import::ItemsProperties), properties);
+    assert_eq!(h.pushes(), pushes);
+}
+
+#[test]
+fn a_burst_of_inventory_changes_is_one_redraw() {
+    let mut h = window();
+    h.settle();
+    let pushes = h.pushes();
+    let owned = h.calls(Import::ItemsOwned);
+    // An appraisal arriving every tick (the login identification).
+    for id in [A, B, C, PLATE, A, B, C, PLATE, A, B] {
+        let current = h.sim.objects.get(&id).cloned();
+        h.send(Event::ObjectChanged(ObjectChange {
+            object_id: id,
+            kind: ObjectChangeKind::IdentReceived,
+            revision: 9,
+            changed_fields: 0,
+            current,
+        }));
+        h.tick();
+    }
+    assert!(h.pushes() - pushes <= 1, "{} pushes", h.pushes() - pushes);
+    assert!(h.calls(Import::ItemsOwned) - owned <= 4);
+}
+
+#[test]
+fn a_closed_window_builds_nothing_until_it_opens() {
+    let mut h = window();
+    h.show_window(false);
+    h.settle();
+    let owned = h.calls(Import::ItemsOwned);
+    h.sim
+        .add_item(0x8000_4001, "Gem D", ObjectClass::Gem, ME, 40, true);
+    let created = h.sim.objects.get(&0x8000_4001).cloned();
+    h.send(Event::ObjectChanged(ObjectChange {
+        object_id: 0x8000_4001,
+        kind: ObjectChangeKind::Created,
+        revision: 2,
+        changed_fields: 0,
+        current: created,
+    }));
+    for _ in 0..100 {
+        h.tick();
+    }
+    assert_eq!(h.calls(Import::ItemsOwned), owned);
+    assert_eq!(h.texts("RowNames").len(), 4);
+    h.show_window(true);
+    h.settle();
+    assert_eq!(h.texts("RowNames").len(), 5);
+}
+
+#[test]
+fn the_preview_is_built_only_while_the_sort_tab_shows() {
+    let mut h = window();
+    h.click("ShowPresets");
+    h.settle();
+    let owned = h.calls(Import::ItemsOwned);
+    let properties = h.calls(Import::ItemsProperties);
+    h.sim
+        .add_item(0x8000_4001, "Gem D", ObjectClass::Gem, ME, 40, true);
+    let created = h.sim.objects.get(&0x8000_4001).cloned();
+    h.send(Event::ObjectChanged(ObjectChange {
+        object_id: 0x8000_4001,
+        kind: ObjectChangeKind::Created,
+        revision: 2,
+        changed_fields: 0,
+        current: created,
+    }));
+    h.settle();
+    assert_eq!(h.calls(Import::ItemsOwned), owned);
+    assert_eq!(h.calls(Import::ItemsProperties), properties);
+    h.click("ShowSort");
+    assert_eq!(h.texts("RowNames").len(), 5);
+}
+
+#[test]
+fn typing_is_saved_when_typing_pauses_or_the_field_is_left() {
+    let mut h = window();
+    h.settle();
+    let writes = h.calls(Import::StorageWrite);
+    for typed in ["g", "ge", "gem", "gem ", "gem b"] {
+        h.type_text("SetNameFilter", typed);
+        h.tick();
+    }
+    // The preview follows every keystroke; nothing is written yet.
+    assert_eq!(h.texts("RowNames"), ["Gem B"]);
+    assert_eq!(h.calls(Import::StorageWrite), writes);
+    for _ in 0..window::SAVE_QUIET_TICKS {
+        h.tick();
+    }
+    assert_eq!(h.calls(Import::StorageWrite), writes + 1);
+    assert_eq!(h.saved().name_filter, "gem b");
+
+    // Leaving the field (or Enter) writes at once.
+    h.click("ShowRecipe");
+    h.type_text("SetSortString", "NM");
+    h.type_text("SetSortString", "NM-");
+    assert_eq!(h.calls(Import::StorageWrite), writes + 1);
+    h.type_text("CommitSortString", "NM-");
+    assert_eq!(h.calls(Import::StorageWrite), writes + 2);
+    assert_eq!(h.saved().sort_string, "NM-");
+    // Nothing more is written once typing pauses.
+    for _ in 0..=window::SAVE_QUIET_TICKS {
+        h.tick();
+    }
+    assert_eq!(h.calls(Import::StorageWrite), writes + 2);
+}
+
+#[test]
+fn typed_text_not_yet_saved_is_written_at_logoff() {
+    let mut h = window();
+    h.settle();
+    h.type_text("SetNameFilter", "plate");
+    h.send(Event::Logoff);
+    assert_eq!(h.saved().name_filter, "plate");
+}
+
+#[test]
+fn a_finished_run_is_gone_after_a_relog() {
+    let mut h = window();
+    h.type_text("SetTo", "Pack 1 · Pack 1 · 0 of 24");
+    h.click("Run");
+    h.run(80);
+    h.settle();
+    assert_eq!(h.text("RunLabel"), "Sort again");
+    h.send(Event::Logoff);
+    h.send(Event::LoginComplete);
+    assert_eq!(h.plugin.sorter().phase(), Phase::Idle);
+    assert!(h.plugin.rows().is_empty());
+    h.settle();
+    assert_eq!(h.text("RunLabel"), "Start sorting");
+    assert_eq!(h.text("PreviewSummary"), "No items");
+}
+
+#[test]
+fn a_recipe_without_keys_shows_no_preview_and_says_so() {
+    let mut h = window();
+    h.type_text("SetSortString", "ZZ");
+    assert!(h.texts("RowNames").is_empty());
+    assert_eq!(h.text("MeterText"), "The recipe has no keys");
+    assert_eq!(h.text("PreviewSummary"), "");
+    h.type_text("SetSortString", "");
+    assert_eq!(h.text("MeterText"), "The recipe has no keys");
 }

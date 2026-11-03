@@ -15,7 +15,7 @@ use openac_plugin::ui::{
     UiAction,
 };
 use openac_plugin::world::{ObjectChangeKind, ObjectClass};
-use openac_plugin::{Event, Host};
+use openac_plugin::{Event, Host, TICK_SECONDS};
 
 use crate::chat;
 use crate::codes::{self, Category, Flag};
@@ -304,6 +304,7 @@ pub const BINDINGS: &[(&str, K)] = &[
     ("SetClass", K::TextAction),
     ("NameFilter", K::Text),
     ("SetNameFilter", K::TextAction),
+    ("CommitNameFilter", K::TextAction),
     ("StartSlot", K::Int),
     ("SetStartSlot", K::IntAction),
     ("EditRecipe", K::Action),
@@ -332,6 +333,7 @@ pub const BINDINGS: &[(&str, K)] = &[
     ("SetReverse", K::BoolAction),
     ("SortString", K::Text),
     ("SetSortString", K::TextAction),
+    ("CommitSortString", K::TextAction),
     ("CopySortString", K::Action),
     ("UnknownCodes", K::Text),
     ("HasUnknownCodes", K::Bool),
@@ -418,6 +420,16 @@ pub fn panel_spec() -> PanelSpec {
         )
 }
 
+/// The fewest ticks between two refreshes a tick makes (about a quarter
+/// of a second), so a run or a burst of inventory changes redraws a few
+/// times a second, not on every tick.
+pub const REFRESH_TICKS: u64 = (0.25 / TICK_SECONDS) as u64 + 1;
+
+/// How long typing must pause before the typed name filter or sort string
+/// is written to the settings file (about a second); leaving the field or
+/// pressing Enter writes it at once.
+pub const SAVE_QUIET_TICKS: u64 = (1.0 / TICK_SECONDS) as u64 + 1;
+
 /// The window's own state, beside the plugin's.
 #[derive(Debug)]
 pub struct Window {
@@ -432,14 +444,21 @@ pub struct Window {
     palette: Palette,
     /// Something the window shows may have changed.
     dirty: bool,
+    /// The run's revision when last shown.
+    shown_revision: u64,
     /// The preview shows the last run (until the player changes what a run
     /// would do).
     show_run: bool,
-    last_phase: Phase,
     /// The ids of the preview's rows, in order.
     shown: Vec<u32>,
     /// The open chest when last refreshed.
     chest: u32,
+    /// Ticks so far.
+    ticks: u64,
+    /// The tick of the last refresh (or look at whether the window shows).
+    last_refresh: u64,
+    /// The tick of the last keystroke not yet written to the settings.
+    unsaved_since: Option<u64>,
 }
 
 impl Window {
@@ -458,10 +477,13 @@ impl Window {
             preset_name: String::new(),
             palette: Palette::of_theme(host),
             dirty: true,
+            shown_revision: 0,
             show_run: false,
-            last_phase: Phase::Idle,
             shown: Vec::new(),
             chest: 0,
+            ticks: 0,
+            last_refresh: 0,
+            unsaved_since: None,
         })
     }
 
@@ -483,11 +505,26 @@ impl Window {
         self.inspected
     }
 
-    /// Whether a tick should refresh: something changed, or a run is under
-    /// way or just changed phase.
-    #[must_use]
-    pub fn needs_refresh(&self, phase: Phase) -> bool {
-        self.dirty || phase.is_running() || phase != self.last_phase
+    /// One tick: writes typed text once typing has paused, and refreshes
+    /// when something the window shows changed, at most once every
+    /// [`REFRESH_TICKS`] and only while the window is open (what changed
+    /// meanwhile is shown when it opens).
+    pub fn tick(&mut self, app: &mut MudSort, host: &mut Host<'_>) {
+        self.ticks += 1;
+        if let Some(since) = self.unsaved_since
+            && self.ticks - since >= SAVE_QUIET_TICKS
+        {
+            app.save_settings(host);
+            self.unsaved_since = None;
+        }
+        let changed = self.dirty || app.sorter().revision() != self.shown_revision;
+        if !changed || self.ticks - self.last_refresh < REFRESH_TICKS {
+            return;
+        }
+        self.last_refresh = self.ticks;
+        if self.panel.is_visible(host) {
+            self.refresh(app, host);
+        }
     }
 
     /// An event the plugin heard: notes whether it may change what the
@@ -524,11 +561,15 @@ impl Window {
                 });
                 self.dirty = true;
             }
-            Event::LoginComplete
-            | Event::Logoff
-            | Event::Command(_)
-            | Event::ContainerOpened(_)
-            | Event::ContainerClosed(_) => self.dirty = true,
+            // A new character: no run to show.
+            Event::LoginComplete | Event::Logoff => {
+                self.show_run = false;
+                self.unsaved_since = None;
+                self.dirty = true;
+            }
+            Event::Command(_) | Event::ContainerOpened(_) | Event::ContainerClosed(_) => {
+                self.dirty = true;
+            }
             _ => {}
         }
     }
@@ -662,7 +703,12 @@ impl Window {
             }
             "SetNameFilter" => {
                 let filter = text.to_owned();
-                self.change(app, host, |s| s.name_filter = filter);
+                self.type_setting(app, |s| s.name_filter = filter);
+            }
+            "CommitNameFilter" => {
+                let filter = text.to_owned();
+                self.type_setting(app, |s| s.name_filter = filter);
+                self.commit(app, host);
             }
             "SetStartSlot" => {
                 if let Some(slot) = int_of(value) {
@@ -694,7 +740,12 @@ impl Window {
             }
             "SetSortString" => {
                 let typed = text.to_owned();
-                self.change(app, host, |s| s.sort_string = typed);
+                self.type_setting(app, |s| s.sort_string = typed);
+            }
+            "CommitSortString" => {
+                let typed = text.to_owned();
+                self.type_setting(app, |s| s.sort_string = typed);
+                self.commit(app, host);
             }
             "CopySortString" => {
                 let text = app.settings().sort_string.clone();
@@ -750,7 +801,26 @@ impl Window {
         change: impl FnOnce(&mut crate::settings::Settings),
     ) {
         app.update_settings(host, change);
+        self.unsaved_since = None;
         self.show_run = false;
+    }
+
+    /// A keystroke in a field: the setting changes at once (the preview
+    /// follows it) and is written once typing pauses or the field is left.
+    fn type_setting(
+        &mut self,
+        app: &mut MudSort,
+        change: impl FnOnce(&mut crate::settings::Settings),
+    ) {
+        app.edit_settings(change);
+        self.unsaved_since = Some(self.ticks);
+        self.show_run = false;
+    }
+
+    /// The field was left or Enter pressed: what was typed is written now.
+    fn commit(&mut self, app: &mut MudSort, host: &mut Host<'_>) {
+        app.save_settings(host);
+        self.unsaved_since = None;
     }
 
     /// Edits the recipe's keys and writes them back as the sort string.
@@ -780,13 +850,41 @@ impl Window {
                 None => s.presets.push(Preset::new(&name, &current)),
             }
         });
+        self.unsaved_since = None;
         self.preset_name.clear();
     }
 
-    /// Pushes every value the window shows; the panel sends only what
-    /// changed.
+    /// Pushes what the tab shown shows (the other tabs are filled when they
+    /// are shown); the panel sends only what changed.
     pub fn refresh(&mut self, app: &MudSort, host: &mut Host<'_>) {
-        let values = self.values(app, host);
+        self.refresh_with(app, host, false);
+    }
+
+    /// Pushes every value of every tab (when the window is registered).
+    pub fn refresh_all(&mut self, app: &MudSort, host: &mut Host<'_>) {
+        self.refresh_with(app, host, true);
+    }
+
+    fn refresh_with(&mut self, app: &MudSort, host: &mut Host<'_>, all: bool) {
+        let mut values = vec![
+            ("SortTab", (self.tab == Tab::Sort).into()),
+            ("RecipeTab", (self.tab == Tab::Recipe).into()),
+            ("PresetsTab", (self.tab == Tab::Presets).into()),
+            ("OptionsTab", (self.tab == Tab::Options).into()),
+            ("Status", status(app.sorter().phase()).into()),
+        ];
+        if all || self.tab == Tab::Sort {
+            self.sort_values(app, host, &mut values);
+        }
+        if all || self.tab == Tab::Recipe {
+            self.recipe_values(app, &mut values);
+        }
+        if all || self.tab == Tab::Presets {
+            self.preset_values(app, &mut values);
+        }
+        if all || self.tab == Tab::Options {
+            self.option_values(app, host, &mut values);
+        }
         for (name, value) in values {
             self.panel.set(name, value);
         }
@@ -794,7 +892,8 @@ impl Window {
             host.warn(&format!("The window could not be updated: {error}"));
         }
         self.dirty = false;
-        self.last_phase = app.sorter().phase();
+        self.shown_revision = app.sorter().revision();
+        self.last_refresh = self.ticks;
     }
 
     /// The name the meter gives a container or player.
@@ -826,8 +925,14 @@ impl Window {
         }
     }
 
+    /// The Sort tab: from, to, filters, chips, the preview and the run.
     #[allow(clippy::too_many_lines)]
-    fn values(&mut self, app: &MudSort, host: &mut Host<'_>) -> Vec<(&'static str, TypedValue)> {
+    fn sort_values(
+        &mut self,
+        app: &MudSort,
+        host: &mut Host<'_>,
+        values: &mut Vec<(&'static str, TypedValue)>,
+    ) {
         let settings = app.settings();
         let phase = app.sorter().phase();
         let running = phase.is_running();
@@ -843,13 +948,19 @@ impl Window {
         let choices = choices(&containers);
         let parsed = settings.keys();
 
-        // The rows: the run's while it has them, else what a run would do.
+        // The rows: the run's while it has them, else what a run would do;
+        // or why there are none.
         let (rows, problem): (Vec<PreviewRow>, Option<String>) = if show_run {
             (app.rows(), None)
+        } else if app.me().is_none() {
+            (Vec::new(), Some("Log in to sort".to_owned()))
+        } else if parsed.keys.is_empty() {
+            // mudsort queued nothing without a key; say so before a run.
+            (Vec::new(), Some("The recipe has no keys".to_owned()))
         } else {
             match app.preview(host) {
                 Ok(rows) => (rows, None),
-                Err(error) => (Vec::new(), Some(error)),
+                Err(error) => (Vec::new(), Some(format!("Cannot sort: {error}"))),
             }
         };
         let columns: Vec<&str> = if show_run {
@@ -903,13 +1014,12 @@ impl Window {
                 (1.0, text)
             }
             _ => {
-                let text = match (&problem, me) {
-                    (_, None) => "Log in to sort".to_owned(),
-                    (Some(error), _) => format!("Cannot sort: {error}"),
+                let text = match (problem.clone(), me) {
+                    (Some(problem), _) => problem,
                     (None, Some(me)) if run::classify(host, dest, me).is_none() => {
                         "Cannot sort: choose where the items go".to_owned()
                     }
-                    (None, Some(_)) => {
+                    (None, _) => {
                         let mut text = format!(
                             "Ready — {} {} to {dest_name}",
                             rows.len(),
@@ -929,11 +1039,6 @@ impl Window {
             (None, 0) => "No items".to_owned(),
             (None, n) if need > 0 => format!("{n} {} · {need} need identify", plural(n)),
             (None, n) => format!("{n} {} · all identified", plural(n)),
-        };
-        let status = match phase {
-            Phase::Identifying => "identifying…",
-            Phase::BuildingList | Phase::Moving => "sorting…",
-            Phase::Idle | Phase::Done => "",
         };
         let run_label = if running {
             "Stop"
@@ -962,9 +1067,8 @@ impl Window {
             }
         };
 
-        // The recipe.
-        let keys = &parsed.keys;
-        let chips: Items = keys
+        let chips: Items = parsed
+            .keys
             .iter()
             .map(|k| {
                 let (now, next) = if k.descending {
@@ -977,122 +1081,14 @@ impl Window {
                     .set("Tip", format!("Click to sort {next} first"))
             })
             .collect();
-        let recipe: Items = keys
-            .iter()
-            .enumerate()
-            .map(|(i, k)| {
-                Item::new()
-                    .set("Number", (i + 1).to_string())
-                    .set("Code", k.flag.code())
-                    .set("Name", k.flag.display_name())
-                    .set("Category", category_name(k.flag.category()))
-                    .set("Direction", direction(k))
-                    .set("CanUp", i > 0)
-                    .set("CanDown", i + 1 < keys.len())
-            })
-            .collect();
-        let unknown = &parsed.unknown;
-        let unknown_text = match unknown.len() {
-            0 => String::new(),
-            1 => format!("Unknown code skipped: {}", unknown[0]),
-            _ => format!("Unknown codes skipped: {}", unknown.join(", ")),
-        };
-        let query = self.search.trim().to_lowercase();
-        let available: Items = codes::table()
-            .flags
-            .iter()
-            .filter(|flag| !keys.iter().any(|k| k.flag == *flag))
-            .filter(|flag| in_category(flag, self.category))
-            .filter(|flag| {
-                query.is_empty()
-                    || format!("{} {} {}", flag.display_name(), flag.code(), flag.name)
-                        .to_lowercase()
-                        .contains(&query)
-            })
-            .map(|flag| {
-                Item::new()
-                    .set("Code", flag.code())
-                    .set("Name", flag.display_name())
-                    .set(
-                        "Hint",
-                        format!("{} · {}", category_name(flag.category()), flag.name),
-                    )
-            })
-            .collect();
-
-        // The presets.
-        let opaque = |rgb: u32| 0xFF00_0000 | rgb;
-        let presets: Items = settings
-            .presets
-            .iter()
-            .map(|p| {
-                let current = p.sort_string.eq_ignore_ascii_case(&settings.sort_string);
-                Item::new()
-                    .set("Name", p.name.as_str())
-                    .set("Text", p.sort_string.as_str())
-                    .set(
-                        "Frame",
-                        opaque(if current {
-                            self.palette.accent
-                        } else {
-                            self.palette.border
-                        }),
-                    )
-            })
-            .collect();
-
-        // The Inspector.
-        let entries = self.inspected.and_then(|id| MudSort::inspect(host, id));
-        if entries.is_none() {
-            self.inspected = None;
-        }
-        let entries = entries.unwrap_or_default();
-        let entry = |code: &str| {
-            entries
-                .iter()
-                .find(|e| e.code == code)
-                .map(|e| e.value.clone())
-        };
-        let (inspect_name, inspect_state) = match self.inspected {
-            Some(id) => {
-                let class = entry("OC").unwrap_or_default();
-                let known = if identify::has_appraisal(host, id) {
-                    "identified"
-                } else {
-                    "not identified yet"
-                };
-                (
-                    entry("NM").unwrap_or_default(),
-                    format!("{class} · {known}"),
-                )
-            }
-            None => ("Nothing selected".to_owned(), String::new()),
-        };
-        let inspect: Items = entries
-            .iter()
-            .map(|e| {
-                let in_recipe = keys.iter().any(|k| k.flag.code() == e.code);
-                Item::new()
-                    .set("Code", e.code)
-                    .set("Name", e.display_name)
-                    .set("Value", e.value.as_str())
-                    .set("CanAdd", !in_recipe)
-            })
-            .collect();
         let preview_selected = self
             .inspected
             .and_then(|id| self.shown.iter().position(|s| *s == id))
             .map_or(-1, index);
-
         let header = |i: usize| columns.get(i).copied().unwrap_or("").to_owned();
         let mut to_items: Vec<String> = choices.iter().map(|c| c.label.clone()).collect();
         to_items.push(GIVE_TO_PLAYER.to_owned());
-        vec![
-            ("SortTab", (self.tab == Tab::Sort).into()),
-            ("RecipeTab", (self.tab == Tab::Recipe).into()),
-            ("PresetsTab", (self.tab == Tab::Presets).into()),
-            ("OptionsTab", (self.tab == Tab::Options).into()),
-            ("Status", status.into()),
+        values.extend([
             (
                 "FromItems",
                 choices
@@ -1155,6 +1151,57 @@ impl Window {
             ("MeterFill", meter_fill.into()),
             ("MeterText", meter_text.into()),
             ("RunLabel", run_label.into()),
+        ]);
+    }
+
+    /// The Recipe tab: the keys, the sort string and the key picker.
+    fn recipe_values(&self, app: &MudSort, values: &mut Vec<(&'static str, TypedValue)>) {
+        let settings = app.settings();
+        let parsed = settings.keys();
+        let keys = &parsed.keys;
+        let recipe: Items = keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| {
+                Item::new()
+                    .set("Number", (i + 1).to_string())
+                    .set("Code", k.flag.code())
+                    .set("Name", k.flag.display_name())
+                    .set("Category", category_name(k.flag.category()))
+                    .set("Direction", direction(k))
+                    .set("CanUp", i > 0)
+                    .set("CanDown", i + 1 < keys.len())
+            })
+            .collect();
+        let unknown = &parsed.unknown;
+        let unknown_text = match unknown.len() {
+            0 => String::new(),
+            1 => format!("Unknown code skipped: {}", unknown[0]),
+            _ => format!("Unknown codes skipped: {}", unknown.join(", ")),
+        };
+        let query = self.search.trim().to_lowercase();
+        let available: Items = codes::table()
+            .flags
+            .iter()
+            .filter(|flag| !keys.iter().any(|k| k.flag == *flag))
+            .filter(|flag| in_category(flag, self.category))
+            .filter(|flag| {
+                query.is_empty()
+                    || format!("{} {} {}", flag.display_name(), flag.code(), flag.name)
+                        .to_lowercase()
+                        .contains(&query)
+            })
+            .map(|flag| {
+                Item::new()
+                    .set("Code", flag.code())
+                    .set("Name", flag.display_name())
+                    .set(
+                        "Hint",
+                        format!("{} · {}", category_name(flag.category()), flag.name),
+                    )
+            })
+            .collect();
+        values.extend([
             ("Recipe", recipe.into()),
             ("Reverse", settings.reverse.into()),
             ("SortString", settings.sort_string.as_str().into()),
@@ -1163,14 +1210,99 @@ impl Window {
             ("Category", index(self.category).into()),
             ("KeySearch", self.search.as_str().into()),
             ("Available", available.into()),
+        ]);
+    }
+
+    /// The Presets tab.
+    fn preset_values(&self, app: &MudSort, values: &mut Vec<(&'static str, TypedValue)>) {
+        let settings = app.settings();
+        let opaque = |rgb: u32| 0xFF00_0000 | rgb;
+        let presets: Items = settings
+            .presets
+            .iter()
+            .map(|p| {
+                let current = p.sort_string.eq_ignore_ascii_case(&settings.sort_string);
+                Item::new()
+                    .set("Name", p.name.as_str())
+                    .set("Text", p.sort_string.as_str())
+                    .set(
+                        "Frame",
+                        opaque(if current {
+                            self.palette.accent
+                        } else {
+                            self.palette.border
+                        }),
+                    )
+            })
+            .collect();
+        values.extend([
             ("Presets", presets.into()),
             ("PresetName", self.preset_name.as_str().into()),
+        ]);
+    }
+
+    /// The Options tab: the switches and the Inspector.
+    fn option_values(
+        &mut self,
+        app: &MudSort,
+        host: &mut Host<'_>,
+        values: &mut Vec<(&'static str, TypedValue)>,
+    ) {
+        let settings = app.settings();
+        let keys = settings.keys().keys;
+        let entries = self.inspected.and_then(|id| MudSort::inspect(host, id));
+        if entries.is_none() {
+            self.inspected = None;
+        }
+        let entries = entries.unwrap_or_default();
+        let entry = |code: &str| {
+            entries
+                .iter()
+                .find(|e| e.code == code)
+                .map(|e| e.value.clone())
+        };
+        let (inspect_name, inspect_state) = match self.inspected {
+            Some(id) => {
+                let class = entry("OC").unwrap_or_default();
+                let known = if identify::has_appraisal(host, id) {
+                    "identified"
+                } else {
+                    "not identified yet"
+                };
+                (
+                    entry("NM").unwrap_or_default(),
+                    format!("{class} · {known}"),
+                )
+            }
+            None => ("Nothing selected".to_owned(), String::new()),
+        };
+        let inspect: Items = entries
+            .iter()
+            .map(|e| {
+                let in_recipe = keys.iter().any(|k| k.flag.code() == e.code);
+                Item::new()
+                    .set("Code", e.code)
+                    .set("Name", e.display_name)
+                    .set("Value", e.value.as_str())
+                    .set("CanAdd", !in_recipe)
+            })
+            .collect();
+        values.extend([
             ("IdentifyOnLogin", settings.identify_on_login.into()),
             ("Announce", settings.announce_when_done.into()),
             ("InspectIcon", self.inspected.unwrap_or(0).into()),
             ("InspectName", inspect_name.into()),
             ("InspectState", inspect_state.into()),
             ("Inspect", inspect.into()),
-        ]
+        ]);
+    }
+}
+
+/// The text beside the tabs while a run is under way.
+fn status(phase: Phase) -> &'static str {
+    match phase {
+        Phase::Identifying => "identifying…",
+        Phase::BuildingList | Phase::Moving => "sorting…",
+        Phase::Idle | Phase::Done => "",
     }
 }

@@ -54,6 +54,8 @@ pub struct MudSort {
     dest: u32,
     /// The window (none before `enable`).
     window: Option<Window>,
+    /// Settings changed and not yet written (text being typed).
+    unsaved: bool,
 }
 
 impl Plugin for MudSort {
@@ -72,10 +74,14 @@ impl Plugin for MudSort {
             self.identifier.tick(host);
             self.sorter.tick(host, &self.identifier);
         }
-        let phase = self.sorter.phase();
-        if self.window.as_ref().is_some_and(|w| w.needs_refresh(phase)) {
-            self.refresh_window(host);
+        if let Some(mut window) = self.window.take() {
+            window.tick(self, host);
+            self.window = Some(window);
         }
+    }
+
+    fn disable(&mut self, host: &mut Host<'_>) {
+        self.save_settings(host);
     }
 
     fn on_event(&mut self, host: &mut Host<'_>, event: Event) {
@@ -115,7 +121,8 @@ impl MudSort {
         if announce {
             chat::say(host, "Plugin online.");
         }
-        self.sorter.cancel(&mut self.identifier);
+        self.save_settings(host);
+        self.sorter.reset(&mut self.identifier);
         self.settings = self.store.load(host, &character.name);
         if announce && self.settings.identify_on_login {
             for item in host.owned_items() {
@@ -130,17 +137,20 @@ impl MudSort {
         });
     }
 
-    /// `CharacterFilter_Logoff`.
+    /// `CharacterFilter_Logoff`: stops and forgets any run, writes what was
+    /// typed and not yet saved.
     fn logoff(&mut self, host: &mut Host<'_>) {
-        self.sorter.cancel(&mut self.identifier);
+        self.sorter.reset(&mut self.identifier);
         self.identifier.clear();
+        self.save_settings(host);
         self.store.close();
         self.me = None;
         chat::say(host, "Plugin offline.");
     }
 
-    fn save(&self, host: &mut Host<'_>) {
+    fn save(&mut self, host: &mut Host<'_>) {
         self.store.save(host, &self.settings);
+        self.unsaved = false;
     }
 
     // ---- The window. ----
@@ -151,10 +161,10 @@ impl MudSort {
         self.window.as_ref()
     }
 
-    /// Pushes what the window shows now.
+    /// Pushes every value of the window, every tab's.
     pub fn refresh_window(&mut self, host: &mut Host<'_>) {
         if let Some(mut window) = self.window.take() {
-            window.refresh(self, host);
+            window.refresh_all(self, host);
             self.window = Some(window);
         }
     }
@@ -187,6 +197,27 @@ impl MudSort {
     pub fn update_settings(&mut self, host: &mut Host<'_>, change: impl FnOnce(&mut Settings)) {
         change(&mut self.settings);
         self.save(host);
+    }
+
+    /// Changes the settings without saving them yet (text being typed);
+    /// [Self::save_settings] writes them.
+    pub fn edit_settings(&mut self, change: impl FnOnce(&mut Settings)) {
+        change(&mut self.settings);
+        self.unsaved = true;
+    }
+
+    /// Writes settings changed by [Self::edit_settings]; nothing when
+    /// none are waiting.
+    pub fn save_settings(&mut self, host: &mut Host<'_>) {
+        if self.unsaved {
+            self.save(host);
+        }
+    }
+
+    /// Whether settings changes wait to be written.
+    #[must_use]
+    pub fn has_unsaved_settings(&self) -> bool {
+        self.unsaved
     }
 
     /// The source's id, 0 when the last one set was invalid (mudsort's

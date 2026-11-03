@@ -102,6 +102,9 @@ pub struct Sim {
     pub in_flight: Option<Req>,
     /// The appraisal awaited.
     pub awaiting: u32,
+    /// Chest items a pick-up joins to a stack already in the main pack (the
+    /// item is gone afterwards).
+    pub merge_on_pickup: Vec<u32>,
     completion: InventoryCompletion,
 }
 
@@ -140,6 +143,7 @@ impl Sim {
             log: Vec::new(),
             in_flight: None,
             awaiting: 0,
+            merge_on_pickup: Vec::new(),
             completion: InventoryCompletion::default(),
         };
         let mut me = object(ME, NAME, ObjectClass::Player, false);
@@ -339,6 +343,10 @@ impl Sim {
                     self.take(id);
                     self.objects.remove(&id);
                 }
+                Req::PickUp { .. } if self.merge_on_pickup.contains(&id) => {
+                    self.take(id);
+                    self.objects.remove(&id);
+                }
                 Req::PickUp { .. } => {
                     let item = self.take(id)?;
                     let slot = Self::next_slot(&self.owned, ME);
@@ -384,7 +392,25 @@ impl Sim {
         self.awaiting = 0;
     }
 
+    /// The client hears of another item's move finishing (another plugin's,
+    /// or the player's) while nothing of ours is answered.
+    pub fn foreign_completion(&mut self, id: u32, weenie_error: u32) {
+        self.completion = InventoryCompletion {
+            revision: self.completion.revision + 1,
+            kind: InventoryCommandKind::PutInContainer,
+            source_id: id,
+            weenie_error,
+        };
+    }
+
     fn item_request(&mut self, request: Req) -> ItemResult {
+        let id = request.id();
+        let known = self.owned.iter().any(|i| i.object_id == id)
+            || self.chest_items.iter().any(|i| i.object_id == id);
+        if !known && !matches!(request, Req::PickUp { .. }) {
+            self.log.push(request);
+            return ItemResult::because(ItemStatus::InvalidItem, "That item is gone.");
+        }
         if let Some(answer) = self.move_answers.pop_front() {
             self.log.push(request);
             return answer;
@@ -556,7 +582,35 @@ impl Harness {
         };
         harness.enable();
         harness.send(Event::LoginComplete);
+        harness.show_window(true);
         harness
+    }
+
+    /// The player opens (or closes) the window.
+    pub fn show_window(&mut self, shown: bool) {
+        let panel = self.panel();
+        self.sim
+            .fake
+            .ui
+            .input(ac_plugin_ui::UiInput::PanelShown { panel, shown });
+    }
+
+    /// Ticks long enough for the window to show what changed (it refreshes
+    /// at most every REFRESH_TICKS).
+    pub fn settle(&mut self) {
+        for _ in 0..=mudsort::window::REFRESH_TICKS {
+            self.tick();
+        }
+    }
+
+    /// How many times client function import was called so far.
+    pub fn calls(&self, import: Import) -> usize {
+        self.sim.fake.calls.iter().filter(|c| **c == import).count()
+    }
+
+    /// How many times the window's values were pushed so far.
+    pub fn pushes(&self) -> usize {
+        self.calls(Import::UiPanelSet) + self.calls(Import::UiPanelSetTyped)
     }
 
     /// Enables the plugin.

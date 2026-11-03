@@ -238,7 +238,20 @@ fn stopping_mid_run_asks_nothing_more() {
 
 #[test]
 fn stopping_while_identifying_drops_the_queued_items() {
-    let mut h = ready();
+    // Without the login identification, nothing else wants them.
+    let mut h = Harness::logged_in(|sim| {
+        three_gems(sim);
+        let settings = mudsort::settings::Settings {
+            identify_on_login: false,
+            ..mudsort::settings::Settings::default()
+        };
+        sim.storage.insert(
+            format!("{NAME}/{}", mudsort::settings::SETTINGS_KEY),
+            settings.to_json(),
+        );
+    });
+    h.ms("set flags al-");
+    h.ms("set dest pack 1");
     h.ms("start");
     h.tick();
     assert_eq!(h.sim.identifies(), vec![C]);
@@ -436,4 +449,182 @@ fn the_class_and_name_filters_choose_the_items() {
     h.ms("clear ocfilter");
     h.ms("start");
     assert!(chat_has(&h, "[mudsort]: 4 items added to sort list..."));
+}
+
+/// Ticks (answering appraisals) until the run's first move is in flight.
+fn until_a_move_is_in_flight(h: &mut Harness) {
+    for _ in 0..40 {
+        h.tick();
+        if let Some(event) = h.sim.answer_appraisal() {
+            h.send(event);
+        }
+        if h.sim.in_flight.is_some() {
+            return;
+        }
+    }
+    panic!("no move went out");
+}
+
+#[test]
+fn a_move_left_over_from_a_stopped_run_is_not_taken_for_the_next_runs() {
+    let mut h = ready();
+    h.ms("start");
+    until_a_move_is_in_flight(&mut h);
+    assert_eq!(
+        h.sim.in_flight,
+        Some(Req::Move {
+            id: A,
+            container: PACK1,
+            slot: 0
+        })
+    );
+    h.ms("stop");
+    h.ms("start");
+    // The new run waits for the client, which is busy with the old move.
+    for _ in 0..5 {
+        h.tick();
+    }
+    // The old move of A finishes; the new run then moves A itself.
+    let event = h.sim.answer_move(0).unwrap();
+    h.send(event);
+    h.tick();
+    h.tick();
+    assert_eq!(h.sim.moves().iter().filter(|m| m.id() == A).count(), 2);
+    assert!(h.sim.in_flight.is_some());
+    // Its answer has not come: the row is still moving.
+    assert_eq!(h.plugin.rows()[0].id, A);
+    assert_eq!(h.plugin.rows()[0].state, RowState::Moving);
+    h.run(40);
+    assert!(h.plugin.rows().iter().all(|r| r.state == RowState::Moved));
+}
+
+#[test]
+fn another_items_completion_does_not_answer_the_move_in_flight() {
+    let mut h = ready();
+    h.ms("start");
+    until_a_move_is_in_flight(&mut h);
+    h.sim.foreign_completion(0x8000_9999, 0x0029);
+    h.tick();
+    h.tick();
+    assert_eq!(h.plugin.rows()[0].state, RowState::Moving);
+    let event = h.sim.answer_move(0).unwrap();
+    h.send(event);
+    h.run(40);
+    assert!(h.plugin.rows().iter().all(|r| r.state == RowState::Moved));
+}
+
+#[test]
+fn a_move_answered_unavailable_is_asked_again() {
+    let mut h = ready();
+    h.ms("start");
+    for _ in 0..5 {
+        h.sim
+            .move_answers
+            .push_back(ItemResult::of(ItemStatus::Unavailable));
+    }
+    h.run(60);
+    let ids: Vec<u32> = h.sim.moves().iter().map(Req::id).collect();
+    assert_eq!(ids, vec![A, A, A, A, A, A, B, C]);
+    assert!(h.plugin.rows().iter().all(|r| r.state == RowState::Moved));
+}
+
+#[test]
+fn a_move_unavailable_too_long_is_given_up() {
+    let mut h = ready();
+    h.ms("start");
+    for _ in 0..=mudsort::run::MAX_BUSY_ANSWERS {
+        h.sim
+            .move_answers
+            .push_back(ItemResult::of(ItemStatus::Unavailable));
+    }
+    h.run(200);
+    let rows = h.plugin.rows();
+    assert_eq!(rows[0].state, RowState::Failed);
+    assert_eq!(
+        rows[0].note.as_deref(),
+        Some("the client was not available")
+    );
+    assert_eq!(rows[1].state, RowState::Moved);
+    assert_eq!(h.plugin.sorter().phase(), Phase::Done);
+}
+
+#[test]
+fn an_identify_answered_unavailable_counts_as_an_attempt() {
+    let mut h = ready();
+    h.ms("start");
+    for _ in 0..mudsort::identify::MAX_ATTEMPTS {
+        h.sim.identify_answers.push_back(ItemStatus::Unavailable);
+    }
+    h.run(60);
+    assert_eq!(&h.sim.identifies()[..3], &[C, C, C]);
+    // Given up after three: sorted without an appraisal, not asked again.
+    assert!(!h.sim.identifies()[3..].contains(&C));
+    assert!(
+        h.sim
+            .fake
+            .logs
+            .iter()
+            .any(|(_, line)| line.contains("the client was not available"))
+    );
+    let c = h.plugin.rows().into_iter().find(|r| r.id == C).unwrap();
+    assert_eq!(c.state, RowState::Moved);
+    assert_eq!(h.plugin.sorter().phase(), Phase::Done);
+}
+
+#[test]
+fn a_chest_item_that_joins_a_stack_on_pick_up_counts_as_moved() {
+    let mut h = Harness::logged_in(|sim| {
+        sim.open_chest();
+        sim.add_item(C, "Gem C", ObjectClass::Gem, CHEST, 10, true);
+        sim.add_item(A, "Gem A", ObjectClass::Gem, CHEST, 30, true);
+        sim.merge_on_pickup.push(A);
+    });
+    h.ms("set flags al-");
+    h.ms(&format!("set source {CHEST}"));
+    h.ms("set dest pack 1");
+    h.ms("start");
+    h.run(40);
+    let rows = h.plugin.rows();
+    assert_eq!(rows[0].id, A);
+    assert_eq!(rows[0].state, RowState::Moved);
+    assert_eq!(rows[0].note.as_deref(), Some("joined a stack"));
+    assert_eq!(rows[1].state, RowState::Moved);
+    assert_eq!(h.sim.contents(PACK1), vec!["Gem C"]);
+}
+
+#[test]
+fn logging_off_and_on_forgets_a_finished_run() {
+    let mut h = ready();
+    h.ms("start");
+    h.run(40);
+    assert_eq!(h.plugin.sorter().phase(), Phase::Done);
+    h.send(Event::Logoff);
+    assert_eq!(h.plugin.sorter().phase(), Phase::Idle);
+    assert!(h.plugin.rows().is_empty());
+    h.send(Event::LoginComplete);
+    assert_eq!(h.plugin.sorter().phase(), Phase::Idle);
+    assert!(h.plugin.rows().is_empty());
+    assert_eq!(h.plugin.progress().total, 0);
+}
+
+#[test]
+fn stopping_gives_the_login_identification_its_items_back() {
+    // Logged in with identification on: the whole inventory is queued, B
+    // among it. The sort takes C and B to the front; stopping it while C
+    // is asked about puts B back, so the login identification still gets
+    // to it.
+    let mut h = ready();
+    h.ms("start");
+    h.tick();
+    assert_eq!(h.sim.identifies(), vec![C]);
+    h.ms("stop");
+    h.sim.drop_appraisal();
+    for _ in 0..20 {
+        h.tick();
+        if let Some(event) = h.sim.answer_appraisal() {
+            h.send(event);
+        }
+    }
+    assert!(h.sim.identifies().contains(&B), "{:?}", h.sim.identifies());
+    assert!(h.sim.moves().is_empty());
 }

@@ -245,13 +245,19 @@ struct Row {
     state: RowState,
     note: Option<String>,
     step: Step,
+    /// `Busy` or `Unavailable` answers so far.
     busy_answers: u32,
+    /// Picked up out of the open chest (its first step is done).
+    picked_up: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct Pending {
     row: usize,
     id: u32,
+    /// The client's last inventory completion when the request went out:
+    /// a completion is this request's answer only when it came after.
+    since: i64,
 }
 
 macro_rules! delegate_item_view {
@@ -355,7 +361,8 @@ pub struct Sorter {
     selection: Vec<u32>,
     next: usize,
     pending: Option<Pending>,
-    observed_revision: i64,
+    /// Counts the changes the window shows (phase, rows, progress).
+    revision: u64,
 }
 
 impl Sorter {
@@ -375,6 +382,31 @@ impl Sorter {
     #[must_use]
     pub fn config(&self) -> Option<&RunConfig> {
         self.config.as_ref()
+    }
+
+    /// Changes whenever the phase, a row or the progress changes, so the
+    /// window redraws only then.
+    #[must_use]
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn changed(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// Forgets the run (login and logoff): stopped if under way, no rows,
+    /// idle.
+    pub fn reset(&mut self, identifier: &mut Identifier) {
+        self.cancel(identifier);
+        self.phase = Phase::Idle;
+        self.config = None;
+        self.source = None;
+        self.dest = None;
+        self.rows.clear();
+        self.selection.clear();
+        self.next = 0;
+        self.changed();
     }
 
     /// Starts a run (`activate`), cancelling one under way; says how many
@@ -423,6 +455,7 @@ impl Sorter {
                     note: None,
                     step: first_step,
                     busy_answers: 0,
+                    picked_up: false,
                 }
             })
             .collect();
@@ -435,13 +468,13 @@ impl Sorter {
         } else {
             sort(rows, &config.keys, config.reverse)
         };
-        self.observed_revision = host.item_state().last_inventory_completion.revision;
         self.next = 0;
         self.pending = None;
         self.source = Some(source);
         self.dest = Some(dest);
         self.config = Some(config);
         self.phase = Phase::Identifying;
+        self.changed();
         chat::say(
             host,
             &format!("{} items added to sort list...", self.rows.len()),
@@ -462,6 +495,7 @@ impl Sorter {
                 }
             }
             self.phase = Phase::Idle;
+            self.changed();
         }
         self.pending = None;
         was_running
@@ -486,9 +520,11 @@ impl Sorter {
     }
 
     fn tick_identifying(&mut self, identifier: &Identifier) {
+        let mut changed = false;
         for row in &mut self.rows {
             if row.state == RowState::NeedsId && !identifier.is_pending(row.item.id) {
                 row.state = RowState::Ready;
+                changed = true;
                 if identifier.gave_up(row.item.id) {
                     row.note = Some("could not be identified".to_owned());
                 }
@@ -496,6 +532,10 @@ impl Sorter {
         }
         if self.rows.iter().all(|row| row.state != RowState::NeedsId) {
             self.phase = Phase::BuildingList;
+            changed = true;
+        }
+        if changed {
+            self.changed();
         }
     }
 
@@ -524,18 +564,23 @@ impl Sorter {
         self.next = 0;
         chat::say(host, &format!("{} items in queue...", self.rows.len()));
         self.phase = Phase::Moving;
+        self.changed();
     }
 
     fn tick_moving(&mut self, host: &mut Host<'_>) {
         let state = host.item_state();
-        if let Some(pending) = self.pending {
+        if let Some(pending) = self.pending.as_mut() {
+            // Only a completion that came after this request went out, for
+            // this item, answers it: an earlier run's move of the same item
+            // (stopped and started again) or another item's move does not.
             let completion = &state.last_inventory_completion;
-            let answer = if completion.revision != self.observed_revision {
-                self.observed_revision = completion.revision;
+            let answer = if completion.revision != pending.since {
+                pending.since = completion.revision;
                 (completion.source_id == pending.id).then_some(completion.weenie_error)
             } else {
                 None
             };
+            let pending = *pending;
             match answer {
                 Some(0) => self.step_done(pending.row),
                 Some(error) => self.fail(
@@ -571,21 +616,40 @@ impl Sorter {
                 continue;
             }
             let id = row.item.id;
+            // Picked up out of the chest, then gone: the pick-up joined it
+            // to a stack already in the main pack, so it is looted.
+            if row.picked_up && host.object(id).is_none() {
+                self.step_done(self.next);
+                self.rows[self.next].note = Some("joined a stack".to_owned());
+                continue;
+            }
             let result = request(host, id, row.step, dest, config.start_slot);
             match result.status {
                 ItemStatus::Started => {
                     self.rows[self.next].state = RowState::Moving;
-                    self.pending = Some(Pending { row: self.next, id });
+                    self.pending = Some(Pending {
+                        row: self.next,
+                        id,
+                        since: host.item_state().last_inventory_completion.revision,
+                    });
+                    self.changed();
                     return;
                 }
                 ItemStatus::Completed => self.step_done(self.next),
-                ItemStatus::Busy => {
+                // One request at a time, or no connection for now: ask
+                // again next tick, a bounded number of times.
+                ItemStatus::Busy | ItemStatus::Unavailable => {
                     let row = &mut self.rows[self.next];
                     row.busy_answers += 1;
                     if row.busy_answers <= MAX_BUSY_ANSWERS {
                         return;
                     }
-                    self.fail(self.next, "the client stayed busy".to_owned());
+                    let why = if result.status == ItemStatus::Busy {
+                        "the client stayed busy"
+                    } else {
+                        "the client was not available"
+                    };
+                    self.fail(self.next, why.to_owned());
                 }
                 other => {
                     let why = result.notice.unwrap_or_else(|| format!("{other:?}"));
@@ -602,10 +666,12 @@ impl Sorter {
         if row.step == Step::PickUp {
             row.step = Step::Place;
             row.state = RowState::Ready;
+            row.picked_up = true;
         } else {
             row.state = RowState::Moved;
             row.note = None;
         }
+        self.changed();
     }
 
     fn fail(&mut self, index: usize, why: String) {
@@ -613,11 +679,13 @@ impl Sorter {
             row.state = RowState::Failed;
             row.note = Some(why);
         }
+        self.changed();
     }
 
     fn finish(&mut self, host: &mut Host<'_>, config: &RunConfig) {
         self.phase = Phase::Done;
         self.pending = None;
+        self.changed();
         if let Some(name) = &config.announce_to {
             host.chat_submit(&format!("/tell {name}, done sorting!"));
         }
@@ -716,6 +784,7 @@ pub fn preview(
             note: None,
             step: Step::Place,
             busy_answers: 0,
+            picked_up: false,
         })
         .collect();
     let rows = if config.keys.is_empty() {

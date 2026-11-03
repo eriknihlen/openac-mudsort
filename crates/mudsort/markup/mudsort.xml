@@ -45,6 +45,7 @@
       <menu w="140" minw="100" items="{ClassItems}" selected="{ClassSelected}"
             onchange="{SetClass}" rows="12" tooltip="Limit sorting to one kind of item" />
       <field grow="1" minw="60" text="{NameFilter}" onchange="{SetNameFilter}"
+             onblur="{CommitNameFilter}" onsubmit="{CommitNameFilter}"
              tooltip="Only items whose name contains this" />
       <label text="Slot" color="theme:muted|#FFC7B98F" />
       <number w="64" minw="54" value="{StartSlot}" onchange="{SetStartSlot}" min="0" max="101"
@@ -111,7 +112,8 @@
     <label text="Sort string (same codes as mudsort, so old strings paste in)"
            color="theme:muted|#FFC7B98F" />
     <group layout="row" gap="6" align="center">
-      <field grow="1" text="{SortString}" onchange="{SetSortString}" maxlength="400"
+      <field grow="1" text="{SortString}" onchange="{SetSortString}"
+             onblur="{CommitSortString}" onsubmit="{CommitSortString}" maxlength="400"
              tooltip="Codes separated by commas; a - after a code sorts it high to low" />
       <button text="Copy" onclick="{CopySortString}" tooltip="Copy the sort string" />
     </group>

@@ -5,7 +5,8 @@
 //! answered `Busy`, and is asked again next tick. A request that ends
 //! without an appraisal (the client gave up on it, or the server could not
 //! appraise the object) is asked again, up to [`MAX_ATTEMPTS`] times; then
-//! the item goes on without one (`DIVERGENCES.md`, MS-8).
+//! the item goes on without one (`DIVERGENCES.md`, MS-8). An `Unavailable`
+//! answer (no connection for now) counts as one of those attempts.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -43,6 +44,9 @@ pub struct Identifier {
     waiting: Option<Want>,
     attempts: HashMap<u32, u32>,
     given_up: HashSet<u32>,
+    /// Objects a sort moved to the front that were already waiting their
+    /// turn (the login identification): a stopped sort gives them back.
+    displaced: Vec<Want>,
 }
 
 impl Identifier {
@@ -72,8 +76,20 @@ impl Identifier {
     /// Puts objects at the front, in their order (a sort waits on them),
     /// known to have no appraisal; an object already queued moves up.
     pub fn push_front(&mut self, wants: &[(u32, Via)]) {
-        self.queue
-            .retain(|want| !wants.iter().any(|(id, _)| *id == want.id));
+        let taken = |want: &Want| wants.iter().any(|(id, _)| *id == want.id);
+        let earlier: Vec<Want> = self
+            .queue
+            .iter()
+            .chain(self.waiting.as_ref())
+            .filter(|want| taken(want))
+            .copied()
+            .collect();
+        for want in earlier {
+            if !self.displaced.iter().any(|d| d.id == want.id) {
+                self.displaced.push(want);
+            }
+        }
+        self.queue.retain(|want| !taken(want));
         for &(id, via) in wants.iter().rev() {
             if self.waiting.is_some_and(|want| want.id == id) {
                 continue;
@@ -121,11 +137,23 @@ impl Identifier {
 
     /// Drops objects (a cancelled sort's): queued ones are not asked about,
     /// and one in flight is not asked about again (its request is left to
-    /// finish; the client answers `Busy` until it does).
+    /// finish; the client answers `Busy` until it does). Those the sort
+    /// took from an earlier request (the login identification) go back to
+    /// the end of the queue.
     pub fn remove(&mut self, ids: &[u32]) {
         self.queue.retain(|want| !ids.contains(&want.id));
         if self.waiting.is_some_and(|want| ids.contains(&want.id)) {
             self.waiting = None;
+        }
+        let (back, kept): (Vec<Want>, Vec<Want>) = std::mem::take(&mut self.displaced)
+            .into_iter()
+            .partition(|want| ids.contains(&want.id));
+        self.displaced = kept;
+        for want in back {
+            self.queue.push_back(Want {
+                checked: false,
+                ..want
+            });
         }
     }
 
@@ -141,6 +169,7 @@ impl Identifier {
         }
         self.queue.retain(|want| want.id != id);
         self.attempts.remove(&id);
+        self.displaced.retain(|want| want.id != id);
     }
 
     /// One tick: notices a request that ended without an appraisal, then
@@ -204,9 +233,23 @@ impl Identifier {
                         ..want
                     });
                 }
-                // One appraisal in flight at a time, or not in the world:
-                // ask again next tick.
-                ItemStatus::Busy | ItemStatus::Unavailable => {}
+                // One appraisal in flight at a time: ask again next tick.
+                ItemStatus::Busy => {}
+                // No connection for now: ask again next tick, as one of the
+                // object's attempts.
+                ItemStatus::Unavailable => {
+                    let attempts = self.attempts.entry(want.id).or_default();
+                    *attempts += 1;
+                    if *attempts >= MAX_ATTEMPTS {
+                        self.attempts.remove(&want.id);
+                        self.queue.pop_front();
+                        self.given_up.insert(want.id);
+                        host.info(&format!(
+                            "{:#010X} could not be identified (the client was not available); it is sorted without an appraisal.",
+                            want.id
+                        ));
+                    }
+                }
                 ItemStatus::Completed => {
                     self.queue.pop_front();
                 }
