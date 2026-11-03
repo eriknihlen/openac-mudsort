@@ -8,7 +8,9 @@ MudSort moves the items over in that order.
 
 Status: the sort core (keys and codes, sort strings, mudsort's string order,
 the sort, the computed keys, item selection) is ported and pinned to
-mudsort's own behaviour. The run, the commands and the window are next.
+mudsort's own behaviour. The run (identify, then move one item at a time
+into a pack, the open chest or another player), the `/ms` commands and the
+per-character settings and presets work; the window is next.
 
 ```powershell
 scripts/check.ps1   # format, lint, test, build target/wasm32-unknown-unknown/release/mudsort.wasm

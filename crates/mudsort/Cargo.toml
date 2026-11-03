@@ -14,6 +14,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 openac-plugin.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+ac-plugin-abi.workspace = true
 
 [lints]
 workspace = true

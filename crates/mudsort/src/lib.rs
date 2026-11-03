@@ -14,29 +14,31 @@
 //! - [`sort`]: the sort itself;
 //! - [`select`]: which items a sort takes.
 //!
-//! The run (identify, move, give), the commands and the window come next;
-//! [`MudSort`] does nothing yet.
+//! Over the client:
+//!
+//! - [`run`]: the sort run (identify, build the list, move one at a time),
+//!   with its progress and rows as plain data for the window;
+//! - [`identify`]: the identification queue;
+//! - [`commands`]: the `/ms` commands;
+//! - [`settings`]: the per-character settings and presets;
+//! - [`inspect`]: an item's value for every key (the Inspector);
+//! - [`plugin`]: [`MudSort`], the plugin, and what the window binds to.
 
 pub mod alphanum;
+pub mod chat;
 pub mod codes;
+pub mod commands;
 pub mod computed;
+pub mod identify;
+pub mod inspect;
 pub mod keys;
+pub mod plugin;
+pub mod run;
 pub mod select;
+pub mod settings;
 pub mod sort;
 pub mod sort_string;
 
-use openac_plugin::{Event, Host, Plugin, StartInfo};
-
-/// The plugin as the client loads it.
-#[derive(Debug, Default)]
-pub struct MudSort;
-
-impl Plugin for MudSort {
-    fn enable(&mut self, _host: &mut Host<'_>, _info: &StartInfo) -> Result<(), String> {
-        Ok(())
-    }
-
-    fn on_event(&mut self, _host: &mut Host<'_>, _event: Event) {}
-}
+pub use plugin::MudSort;
 
 openac_plugin::export_plugin!(MudSort);

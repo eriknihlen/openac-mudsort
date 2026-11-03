@@ -15,7 +15,12 @@ publish = false
 [workspace.dependencies]
 # The plugin SDK (MIT), from the openAC-rust repository, pinned to a commit
 # of its main branch.
-openac-plugin = { git = "https://github.com/eriknihlen/openac-rust", rev = "1b8312d5f3ce9f3c988b7221dadade227cc80ed6" }
+openac-plugin = { git = "https://github.com/eriknihlen/openac-rust", rev = "9203fb3b75c2b363cd01ea98518ea20e44511789" }
+# The SDK's wire records, for the tests' fake client (same commit).
+ac-plugin-abi = { git = "https://github.com/eriknihlen/openac-rust", rev = "9203fb3b75c2b363cd01ea98518ea20e44511789" }
+# The settings file is JSON.
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
