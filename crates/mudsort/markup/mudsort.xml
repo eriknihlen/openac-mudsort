@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MudSort's window, the plugin's one shelf button, in the shared plugin
+     theme. Four tabs: Sort (from, to, filters, the recipe at a glance, the
+     live preview of the move order, the meter and the one Start/Stop
+     button), Recipe (the keys in order, the sort string, adding a key),
+     Presets (named recipes) and Options (the two switches and the
+     Inspector). The bindings are declared in src/window.rs. -->
+<panel title="MudSort" theme="plugin" layout="column" padding="8" gap="8"
+       w="480" h="640" minw="480" minh="600" resizable="true">
+
+  <group layout="row" gap="2" align="center">
+    <tab text="Sort" selected="{SortTab}" onclick="{ShowSort}" />
+    <tab text="Recipe" selected="{RecipeTab}" onclick="{ShowRecipe}" />
+    <tab text="Presets" selected="{PresetsTab}" onclick="{ShowPresets}" />
+    <tab text="Options" selected="{OptionsTab}" onclick="{ShowOptions}" />
+    <group w="8" h="1" />
+    <label text="{Status}" grow="1" color="theme:muted|#FFC7B98F" />
+  </group>
+
+  <!-- ==================== Sort ==================== -->
+  <group layout="column" gap="6" grow="1" visible="{SortTab}">
+    <group layout="row" gap="6" align="center">
+      <label text="From" w="44" minw="44" color="theme:muted|#FFC7B98F" />
+      <menu grow="1" items="{FromItems}" selected="{FromSelected}" onchange="{SetFrom}"
+            tooltip="Where the items come from" />
+      <button text="Use selection" onclick="{FromSelection}"
+              tooltip="Use the selected container as the source" />
+    </group>
+    <group layout="row" gap="8" align="center">
+      <group w="44" h="1" />
+      <separator grow="1" h="9" alignself="center" />
+      <button text="Swap" onclick="{Swap}" tooltip="Swap source and destination" />
+      <separator grow="1" h="9" alignself="center" />
+    </group>
+    <group layout="row" gap="6" align="center">
+      <label text="To" w="44" minw="44" color="theme:muted|#FFC7B98F" />
+      <menu grow="1" items="{ToItems}" selected="{ToSelected}" onchange="{SetTo}"
+            tooltip="Where the items go" />
+      <button text="Use selection" onclick="{ToSelection}"
+              tooltip="Use the selected container (or player) as the destination" />
+    </group>
+
+    <group layout="row" gap="6" align="center">
+      <label text="Only" w="44" minw="44" color="theme:muted|#FFC7B98F" />
+      <menu w="140" minw="100" items="{ClassItems}" selected="{ClassSelected}"
+            onchange="{SetClass}" rows="12" tooltip="Limit sorting to one kind of item" />
+      <field grow="1" minw="60" text="{NameFilter}" onchange="{SetNameFilter}"
+             tooltip="Only items whose name contains this" />
+      <label text="Slot" color="theme:muted|#FFC7B98F" />
+      <number w="64" minw="54" value="{StartSlot}" onchange="{SetStartSlot}" min="0" max="101"
+              tooltip="Every item is put at this slot of the destination" />
+    </group>
+
+    <group layout="row" wrap="true" gap="4" align="center" scroll="y">
+      <label text="Sort by" w="44" minw="44" color="theme:muted|#FFC7B98F" />
+      <repeat items="{Chips}">
+        <button text="{Label}" tooltip="{Tip}" onclick="{Flip}" />
+      </repeat>
+      <button text="Edit…" onclick="{EditRecipe}" tooltip="Change the recipe" />
+    </group>
+
+    <group layout="row" gap="6" align="center">
+      <label text="Preview" grow="1" color="theme:accent|#FFE8D8B0" />
+      <label text="{PreviewSummary}" color="theme:muted|#FFC7B98F" />
+    </group>
+    <list grow="1" header="true" rowheight="32" selectionband="true"
+          selected="{PreviewSelected}" onchange="{SelectRow}">
+      <column type="text" header="#" width="24" items="{RowNumbers}" />
+      <column type="icon" iconkind="item" width="34" values="{RowIcons}" onclick="{SelectRow}" />
+      <column type="text" header="Item" width="*" items="{RowNames}" />
+      <column type="text" header="{Column0}" width="50" items="{RowValues0}" />
+      <column type="text" header="{Column1}" width="50" items="{RowValues1}" />
+      <column type="text" header="{Column2}" width="50" items="{RowValues2}" />
+      <column type="text" header="State" items="{RowStates}" colors="{RowStateColors}" />
+    </list>
+
+    <group w="464" h="22">
+      <meter x="0" y="0" w="464" h="22" fill="{MeterFill}" color="theme:border|#FF61573B"
+             anchor="left top right" />
+      <label x="8" y="3" text="{MeterText}" anchor="left top" />
+    </group>
+    <button h="34" text="{RunLabel}" onclick="{Run}"
+            tooltip="Starts sorting; press again to stop" />
+  </group>
+
+  <!-- ==================== Recipe ==================== -->
+  <group layout="column" gap="8" grow="1" visible="{RecipeTab}">
+    <label text="Ordered by the first key; ties go to the next, and so on."
+           color="theme:muted|#FFC7B98F" />
+    <group layout="column" h="170" scroll="y"
+           background="theme:field|#FF0C0906" border="theme:border|#FF61573B">
+      <repeat items="{Recipe}">
+        <group layout="row" gap="6" align="center" padding="3 6">
+          <label text="{Number}" w="18" minw="18" color="theme:muted|#FFC7B98F" />
+          <label text="{Code}" w="26" minw="26" color="theme:accent|#FFE8D8B0" />
+          <group layout="column" grow="1">
+            <label text="{Name}" />
+            <label text="{Category}" color="theme:muted|#FFC7B98F" />
+          </group>
+          <button text="{Direction}" w="92" minw="92" onclick="{Flip}"
+                  tooltip="Flip this key's direction" />
+          <button text="Up" enabled="{CanUp}" onclick="{Up}" tooltip="Move up" />
+          <button text="Down" enabled="{CanDown}" onclick="{Down}" tooltip="Move down" />
+          <button text="x" onclick="{Remove}" tooltip="Remove this key" />
+        </group>
+      </repeat>
+    </group>
+
+    <checkbox text="Reverse the whole order" checked="{Reverse}" onchange="{SetReverse}" />
+
+    <label text="Sort string (same codes as mudsort, so old strings paste in)"
+           color="theme:muted|#FFC7B98F" />
+    <group layout="row" gap="6" align="center">
+      <field grow="1" text="{SortString}" onchange="{SetSortString}" maxlength="400"
+             tooltip="Codes separated by commas; a - after a code sorts it high to low" />
+      <button text="Copy" onclick="{CopySortString}" tooltip="Copy the sort string" />
+    </group>
+    <label text="{UnknownCodes}" visible="{HasUnknownCodes}" color="#FFE0A458" />
+
+    <label text="Add a key" color="theme:accent|#FFE8D8B0" />
+    <radio minw="400" items="Common|All|Text|Number|Decimal|Yes/No|Computed"
+           selected="{Category}" onchange="{SetCategory}"
+           orientation="horizontal" style="segmented" />
+    <field text="{KeySearch}" onchange="{SetKeySearch}" tooltip="Search keys" />
+    <group layout="column" grow="1" scroll="y"
+           background="theme:field|#FF0C0906" border="theme:border|#FF61573B">
+      <repeat items="{Available}" key="{Code}">
+        <group layout="row" gap="6" align="center" padding="3 6">
+          <label text="{Code}" w="26" minw="26" color="theme:accent|#FFE8D8B0" />
+          <group layout="column" grow="1">
+            <label text="{Name}" />
+            <label text="{Hint}" color="theme:muted|#FFC7B98F" />
+          </group>
+          <button text="+" onclick="{Add}" tooltip="Add this key to the recipe" />
+        </group>
+      </repeat>
+    </group>
+  </group>
+
+  <!-- ==================== Presets ==================== -->
+  <group layout="column" gap="8" grow="1" visible="{PresetsTab}">
+    <label text="Saved recipes. Load one to make it the current sort."
+           color="theme:muted|#FFC7B98F" />
+    <label text="Saved per character." color="theme:muted|#FFC7B98F" />
+    <group layout="column" gap="6" grow="1" scroll="y">
+      <repeat items="{Presets}">
+        <group layout="row" gap="8" align="center" padding="8"
+               background="theme:field|#FF0C0906" border="{Frame}">
+          <group layout="column" grow="1">
+            <label text="{Name}" />
+            <label text="{Text}" color="theme:muted|#FFC7B98F" />
+          </group>
+          <button text="Load" onclick="{Load}" tooltip="Make this the current recipe" />
+          <button text="Delete" onclick="{Delete}" tooltip="Delete this preset" />
+        </group>
+      </repeat>
+    </group>
+    <group layout="row" gap="6" align="center">
+      <field grow="1" text="{PresetName}" onchange="{SetPresetName}"
+             onsubmit="{SubmitPresetName}" tooltip="Name for the current recipe" />
+      <button text="Save current" onclick="{SavePreset}"
+              tooltip="Save the current recipe under this name" />
+    </group>
+  </group>
+
+  <!-- ==================== Options ==================== -->
+  <group layout="column" gap="8" grow="1" visible="{OptionsTab}">
+    <checkbox text="Identify my inventory at login"
+              checked="{IdentifyOnLogin}" onchange="{SetIdentifyOnLogin}" />
+    <checkbox text="Tell me in chat when a sort finishes"
+              checked="{Announce}" onchange="{SetAnnounce}" />
+
+    <group layout="row" gap="8" align="center">
+      <label text="Inspector" color="theme:accent|#FFE8D8B0" />
+      <label text="click an item in the preview, or select one in the world" grow="1"
+             color="theme:muted|#FFC7B98F" />
+    </group>
+    <group layout="row" gap="8" align="center" padding="6"
+           background="theme:field|#FF0C0906" border="theme:border|#FF61573B">
+      <icon item="{InspectIcon}" w="32" h="32" />
+      <group layout="column" grow="1">
+        <label text="{InspectName}" />
+        <label text="{InspectState}" color="theme:muted|#FFC7B98F" />
+      </group>
+    </group>
+    <group layout="column" grow="1" scroll="y"
+           background="theme:field|#FF0C0906" border="theme:border|#FF61573B">
+      <repeat items="{Inspect}" key="{Code}">
+        <group layout="row" gap="6" align="center" padding="2 6">
+          <label text="{Code}" w="26" minw="26" color="theme:accent|#FFE8D8B0" />
+          <label text="{Name}" grow="1" />
+          <label text="{Value}" w="110" minw="60" />
+          <button text="+" enabled="{CanAdd}" onclick="{Add}"
+                  tooltip="Add this key to the recipe" />
+        </group>
+      </repeat>
+    </group>
+
+    <separator />
+    <label text="MudSort for OpenAC · based on mudsort by mudzereli (MIT) · /ms help"
+           color="theme:muted|#FFC7B98F" />
+  </group>
+</panel>

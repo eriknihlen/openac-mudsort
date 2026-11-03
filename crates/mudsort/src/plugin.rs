@@ -3,6 +3,7 @@
 //! queue and the settings; and the state the window binds to.
 
 use openac_plugin::items::InventoryItem;
+use openac_plugin::ui::{UiAction, UiEvent};
 use openac_plugin::world::{ObjectChangeKind, ObjectClass};
 use openac_plugin::{CommandCall, Event, Host, Plugin, StartInfo};
 
@@ -14,6 +15,7 @@ use crate::inspect::{self, InspectorEntry};
 use crate::keys::DecalItem;
 use crate::run::{self, Place, PreviewRow, Progress, RunConfig, Sorter, valid_container};
 use crate::settings::{Settings, SettingsStore};
+use crate::window::Window;
 
 /// The verb.
 pub const VERB: &str = "ms";
@@ -50,26 +52,40 @@ pub struct MudSort {
     me: Option<Me>,
     source: u32,
     dest: u32,
+    /// The window (none before `enable`).
+    window: Option<Window>,
 }
 
 impl Plugin for MudSort {
     fn enable(&mut self, host: &mut Host<'_>, _info: &StartInfo) -> Result<(), String> {
         host.register_command(VERB, commands::DESCRIPTION)?;
+        self.window = Some(Window::open(host)?);
         // Enabled while in the world (a reload): pick the character up
         // without the login's chat line and identification.
         self.login(host, false);
+        self.refresh_window(host);
         Ok(())
     }
 
     fn tick(&mut self, host: &mut Host<'_>) {
-        if self.me.is_none() {
-            return;
+        if self.me.is_some() {
+            self.identifier.tick(host);
+            self.sorter.tick(host, &self.identifier);
         }
-        self.identifier.tick(host);
-        self.sorter.tick(host, &self.identifier);
+        let phase = self.sorter.phase();
+        if self.window.as_ref().is_some_and(|w| w.needs_refresh(phase)) {
+            self.refresh_window(host);
+        }
     }
 
     fn on_event(&mut self, host: &mut Host<'_>, event: Event) {
+        if let Event::Ui(UiEvent::Action(action)) = &event {
+            self.window_action(host, action);
+            return;
+        }
+        if let Some(window) = self.window.as_mut() {
+            window.on_event(host, &event);
+        }
         match event {
             Event::Command(call) if call.verb.eq_ignore_ascii_case(VERB) => {
                 self.command(host, &call);
@@ -125,6 +141,32 @@ impl MudSort {
 
     fn save(&self, host: &mut Host<'_>) {
         self.store.save(host, &self.settings);
+    }
+
+    // ---- The window. ----
+
+    /// The window.
+    #[must_use]
+    pub fn window(&self) -> Option<&Window> {
+        self.window.as_ref()
+    }
+
+    /// Pushes what the window shows now.
+    pub fn refresh_window(&mut self, host: &mut Host<'_>) {
+        if let Some(mut window) = self.window.take() {
+            window.refresh(self, host);
+            self.window = Some(window);
+        }
+    }
+
+    /// One of the window's controls was used.
+    fn window_action(&mut self, host: &mut Host<'_>, action: &UiAction) {
+        if let Some(mut window) = self.window.take() {
+            if window.panel_id() == action.panel {
+                window.act(self, host, action);
+            }
+            self.window = Some(window);
+        }
     }
 
     // ---- What the window binds to. ----

@@ -78,6 +78,7 @@ name = "mudsort"
 version = "0.1.0"
 dependencies = [
  "ac-plugin-abi",
+ "ac-plugin-ui",
  "openac-plugin",
  "serde",
  "serde_json",

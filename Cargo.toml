@@ -18,6 +18,9 @@ publish = false
 openac-plugin = { git = "https://github.com/eriknihlen/openac-rust", rev = "9203fb3b75c2b363cd01ea98518ea20e44511789" }
 # The SDK's wire records, for the tests' fake client (same commit).
 ac-plugin-abi = { git = "https://github.com/eriknihlen/openac-rust", rev = "9203fb3b75c2b363cd01ea98518ea20e44511789" }
+# The client's plugin UI state, for the window tests: they use the window's
+# controls through it, as the client does (same commit).
+ac-plugin-ui = { git = "https://github.com/eriknihlen/openac-rust", rev = "9203fb3b75c2b363cd01ea98518ea20e44511789" }
 # The settings file is JSON.
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"

@@ -607,6 +607,110 @@ impl Harness {
             .collect()
     }
 
+    /// The window's panel.
+    pub fn panel(&self) -> u32 {
+        self.plugin.window().expect("the window").panel_id()
+    }
+
+    /// The player uses one of the window's controls: its handler fires as
+    /// the client fires it, through the client's UI state, which drops a
+    /// handler the window does not bind or an argument of another kind (so
+    /// the test fails here).
+    pub fn act(&mut self, handler: &str, value: ac_plugin_ui::ActionValue) {
+        let panel = self.panel();
+        self.sim.fake.ui.input(ac_plugin_ui::UiInput::Action {
+            panel,
+            handler: handler.to_owned(),
+            value,
+        });
+        let events = self.sim.fake.ui.take_events();
+        assert!(
+            !events.is_empty(),
+            "the window binds no handler {handler} taking that argument"
+        );
+        for (_, event) in events {
+            self.send(ac_plugin_abi::ui_host::event(event));
+        }
+    }
+
+    /// A button, tab or other control without an argument.
+    pub fn click(&mut self, handler: &str) {
+        self.act(handler, ac_plugin_ui::ActionValue::None);
+    }
+
+    /// Typed text, a menu's pick.
+    pub fn type_text(&mut self, handler: &str, text: &str) {
+        self.act(handler, ac_plugin_ui::ActionValue::Text(text.to_owned()));
+    }
+
+    /// The value last pushed for a window binding.
+    pub fn value(&self, name: &str) -> openac_plugin::ui::TypedValue {
+        self.sim
+            .fake
+            .panel_typed_value(self.panel(), name)
+            .unwrap_or_else(|| panic!("no value pushed for {name}"))
+    }
+
+    /// A text binding's value.
+    pub fn text(&self, name: &str) -> String {
+        match self.value(name) {
+            openac_plugin::ui::TypedValue::Text(text) => text,
+            other => panic!("{name} is {other:?}"),
+        }
+    }
+
+    /// A text-list binding's value.
+    pub fn texts(&self, name: &str) -> Vec<String> {
+        match self.value(name) {
+            openac_plugin::ui::TypedValue::TextList(list) => list,
+            other => panic!("{name} is {other:?}"),
+        }
+    }
+
+    /// A bool binding's value.
+    pub fn flag(&self, name: &str) -> bool {
+        match self.value(name) {
+            openac_plugin::ui::TypedValue::Bool(on) => on,
+            other => panic!("{name} is {other:?}"),
+        }
+    }
+
+    /// The values of one field of a list's items (a `<repeat>`'s rows), as
+    /// text.
+    pub fn item_field(&self, list: &str, field: &str) -> Vec<String> {
+        let panel = self.panel();
+        let view = self
+            .sim
+            .fake
+            .ui
+            .panels()
+            .find(|p| p.id == panel)
+            .expect("the panel");
+        match view.values.get(list) {
+            Some(ac_plugin_ui::UiValue::Items(items)) => items
+                .iter()
+                .map(|item| match item.values.get(field) {
+                    Some(ac_plugin_ui::UiValue::Text(text)) => text.clone(),
+                    Some(other) => format!("{other:?}"),
+                    None => String::new(),
+                })
+                .collect(),
+            other => panic!("{list} is {other:?}"),
+        }
+    }
+
+    /// The settings as saved in storage.
+    pub fn saved(&self) -> mudsort::settings::Settings {
+        let text = self
+            .sim
+            .storage
+            .iter()
+            .find(|(key, _)| key.ends_with(mudsort::settings::SETTINGS_KEY))
+            .map(|(_, text)| text.clone())
+            .expect("settings saved");
+        mudsort::settings::Settings::from_json(&text).expect("settings")
+    }
+
     /// Ticks until the run is no longer running, answering every request
     /// in flight with a success after each tick; at most `ticks` ticks.
     pub fn run(&mut self, ticks: usize) {

@@ -22,7 +22,8 @@
 //! - [`commands`]: the `/ms` commands;
 //! - [`settings`]: the per-character settings and presets;
 //! - [`inspect`]: an item's value for every key (the Inspector);
-//! - [`plugin`]: [`MudSort`], the plugin, and what the window binds to.
+//! - [`plugin`]: [`MudSort`], the plugin, and what the window binds to;
+//! - [`window`]: the window (`markup/mudsort.xml`) and its bindings.
 
 pub mod alphanum;
 pub mod chat;
@@ -38,6 +39,7 @@ pub mod select;
 pub mod settings;
 pub mod sort;
 pub mod sort_string;
+pub mod window;
 
 pub use plugin::MudSort;
 
