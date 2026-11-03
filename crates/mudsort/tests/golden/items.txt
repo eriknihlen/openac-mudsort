@@ -1,0 +1,273 @@
+# Golden sort cases, read by tools/golden/Harness.cs (mudsort's own code on
+# .NET Framework) and by the Rust tests. Tab-separated:
+#   case <name> <sort string> <reverse whole list 0	1>
+#   item <id> <Decal ObjectClass number> <fields...>
+#     L<key>=<int>  D<key>=<double>  S<key>=<text>  B<key>=True	False
+#     P=<spell id,spell id,...>
+#   end
+# Keys are Decal's value keys (AC property ids, and Decal's own keys from
+# 0x0A000000 up). Absent keys read as Decal reads them: 0, 0.0, "", false.
+
+case	numbers_ascending	AL	0
+item	1	2	L28=9
+item	2	2	L28=10
+item	3	2	L28=2
+item	4	2	L28=-1
+item	5	2	L28=-5
+item	6	2	L28=0
+item	7	2	L28=100
+item	8	2	L28=-10
+item	9	2
+item	10	2	L28=10
+end
+
+case	numbers_descending	AL-	0
+item	1	2	L28=9
+item	2	2	L28=10
+item	3	2	L28=2
+item	4	2	L28=-1
+item	5	2	L28=-5
+item	6	2	L28=0
+item	7	2	L28=100
+item	8	2	L28=-10
+item	9	2
+item	10	2	L28=10
+end
+
+case	ties_keep_input_order	NM	0
+item	1	8	S1=B
+item	2	8	S1=A
+item	3	8	S1=B
+item	4	8	S1=A
+item	5	8	S1=C
+item	6	8	S1=A
+end
+
+case	reverse_whole_list	OC,NM	1
+item	1	8	S1=B
+item	2	2	S1=A
+item	3	8	S1=A
+item	4	2	S1=C
+item	5	11	S1=Z
+end
+
+case	default_new	OC,EQ,CV,AL-,AB-,DB-,ED-,ML,MT,NM	0
+item	1	2	S1=Celdon Breastplate	L28=520	L218103822=512	L218103821=1024	L86=180	L131=48
+item	2	2	S1=Amuli Shadow Leggings	L28=530	L218103822=2304	L218103821=19456	L86=150	L131=49
+item	3	2	S1=Celdon Girth	L28=520	L218103822=1024	L218103821=2048	L86=180	L131=48
+item	4	1	S1=Spear	L218103822=1048576	D167772172=1.15	D167772174=1	L86=0	L131=60
+item	5	1	S1=Spear	L218103822=1048576	D167772172=1.18	D167772174=1	L131=60
+item	6	9	S1=Yumi	L218103822=4194304	D167772174=2.4	L204=18	L86=75	L131=58
+item	7	9	S1=Yumi	L218103822=4194304	D167772174=2.4	L204=22	L86=75	L131=58
+item	8	39	S1=Salvaged Steel	L131=64
+item	9	39	S1=Salvaged Iron	L131=62
+item	10	11	S1=Sapphire	L131=37
+item	11	3	S1=Shirt	L218103822=2	L218103821=8	L28=0
+item	12	4	S1=Ring	L218103822=786432
+item	13	2	S1=Celdon Breastplate	L28=540	L218103822=512	L218103821=1024	L86=180	L131=48	L10=512
+end
+
+case	default_old	OC,ES,CV,AL-,AB-,DG-,ED-,ML,MA,NM	0
+item	1	2	S1=Celdon Breastplate	L28=520	L218103822=512	L218103821=1024	L86=180	L131=48
+item	2	2	S1=Amuli Shadow Leggings	L28=530	L218103822=2304	L218103821=19456	L86=150	L131=49
+item	3	2	S1=Celdon Girth	L28=520	L218103822=1024	L218103821=2048	L86=180	L131=48
+item	4	1	S1=Spear	L218103822=1048576	D167772172=1.15	D167772174=1	L86=0	L131=60
+item	5	1	S1=Spear	L218103822=1048576	D167772172=1.18	D167772174=1	L131=60
+item	6	9	S1=Yumi	L218103822=4194304	D167772174=2.4	L204=18	L86=75	L131=58
+item	7	9	S1=Yumi	L218103822=4194304	D167772174=2.4	L204=22	L86=75	L131=58
+item	8	39	S1=Salvaged Steel	L131=64
+item	9	39	S1=Salvaged Iron	L131=62
+item	10	11	S1=Sapphire	L131=37
+item	11	3	S1=Shirt	L218103822=2	L218103821=8	L28=0
+item	12	4	S1=Ring	L218103822=786432
+item	13	2	S1=Celdon Breastplate	L28=540	L218103822=512	L218103821=1024	L86=180	L131=48	L10=512
+end
+
+case	computed	BW-,BP-,BE-,BD-,BA-,BM-,TM-,TS-,TR-	0
+item	1	1	L218103842=50	P=2453,6089,2598,1234
+item	2	1	L218103842=55	P=2452
+item	3	2	L28=500	P=2604,4667,2948
+item	4	2	L28=600
+item	5	31	D152=0.1	P=3251,6098	D144=1.2	P=3201,6087
+item	6	31	D152=0.15	P=6035,2352,3250,4670
+item	7	1	D29=1.15	P=2600,6091	D167772172=1.1	P=2438,6094
+item	8	1	D29=1.2	P=3985,2588,4663,2488	D167772172=1.05	P=2439,2603,3984,2437,2591,2630,4666
+item	9	9	D167772174=2.5	L204=20	P=2629,3828
+item	10	9	D167772174=1.9	L204=12	P=2454,2586,2487,2486
+item	11	8	L370=10	L372=5	L374=8
+item	12	8	L370=3	L371=4	L372=5	L373=6	L374=7	L375=8	L376=9	L379=10
+item	13	8
+item	14	31	D144=0.5	P=3199,3202,3200,6086
+item	15	9	D167772174=1	L204=5
+end
+
+case	decimals	MB	0
+item	1	1	D29=1.15
+item	2	1	D29=1.1
+item	3	1	D29=0.07
+item	4	1	D29=-0.05
+item	5	1	D29=10000000000
+item	6	1	D29=NaN
+item	7	1	D29=1
+item	8	1	D29=0.99999999
+item	9	1	D29=2.5
+item	10	1	D29=-10000000000
+item	11	1	D29=0.12345678
+item	12	1	D29=1.005
+item	13	1	D29=0.29
+item	14	1	D29=0.57
+item	15	1	D29=1.2000000476837158
+item	16	1
+end
+
+case	leading_zero_names	NM	0
+item	1	8	S1=item 01
+item	2	8	S1=item 1
+item	3	8	S1=item 2
+item	4	8	S1=Item 1
+item	5	8	S1=item 10
+item	6	8	S1=item 001
+end
+
+case	leading_zero_names_second_key	BR,NM	0
+item	1	8	S1=item 01	L5=10
+item	2	8	S1=item 1	L5=10
+item	3	8	S1=item 2	L5=5
+item	4	8	S1=Item 1	L5=10
+item	5	8	S1=item 10	L5=5
+item	6	8	S1=item 001	L5=10
+end
+
+case	bools	RT,NM	0
+item	1	1	B91=True	S1=a
+item	2	1	B91=False	S1=b
+item	3	1	S1=c
+item	4	1	B91=True	S1=d
+end
+
+case	bools_descending	RT-,NM	0
+item	1	1	B91=True	S1=a
+item	2	1	B91=False	S1=b
+item	3	1	S1=c
+item	4	1	B91=True	S1=d
+end
+
+case	name_case_and_punctuation	NM	0
+item	1	8	S1=apple
+item	2	8	S1=Apple
+item	3	8	S1=banana
+item	4	8	S1=Banana
+item	5	8	S1=co-op
+item	6	8	S1=coop
+item	7	8	S1=Coop
+item	8	8	S1=Asheron's Call
+item	9	8	S1=Asherons Call
+item	10	8	S1=Pyreal Mote
+item	11	8	S1=Pyreal Sliver
+item	12	8	S1=Pyreal
+item	13	8	S1=Salvage (100)
+item	14	8	S1=Salvage (25)
+end
+
+case	object_class	OC	0
+item	1	2
+item	2	1
+item	3	9
+item	4	39
+item	5	0
+item	6	31
+item	7	11
+item	8	7
+item	9	8
+item	10	42
+item	11	29
+item	12	16
+item	13	12
+item	14	3
+item	15	4
+end
+
+case	object_class_descending_then_name	OC-,NM	0
+item	1	2	S1=b
+item	2	1	S1=a
+item	3	2	S1=a
+item	4	39	S1=z
+item	5	1	S1=b
+end
+
+case	empty_sort_string		0
+item	1	8	S1=b
+item	2	8	S1=a
+end
+
+case	unknown_codes_only	ZZ,QQ	0
+item	1	8	S1=b
+item	2	8	S1=a
+end
+
+case	unknown_code_skipped	ZZ,NM	0
+item	1	8	S1=b
+item	2	8	S1=a
+end
+
+case	strings_and_secondary	SN,IN-,NM	0
+item	1	8	S1=a	S184549376=Pyreals	S7=hello
+item	2	8	S1=b	S184549376=Pyreals	S7=world
+item	3	8	S1=c	S7=hello
+item	4	8	S1=d	S184549376=Motes
+end
+
+case	duplicate_key_shares_direction	AL,AL-	0
+item	1	2	L28=1
+item	2	2	L28=3
+item	3	2	L28=2
+end
+
+# The distinct values carry over from pass to pass (PluginCore.cs,
+# sortValueList is never cleared), so the burdens of the BR pass are in the
+# list .NET's unstable sort reorders for the NM pass.
+case	names_after_carried_values	NM,BR-	0
+item	1	8	S1=item 01	L5=7
+item	2	8	S1=item 1	L5=30
+item	3	8	S1=item 001	L5=2
+item	4	8	S1=item 1	L5=11
+item	5	8	S1=item 0001	L5=5
+item	6	8	S1=item 01	L5=19
+item	7	8	S1=item 00001	L5=3
+end
+
+case	names_after_carried_values_ascending	NM,BR	0
+item	1	8	S1=item 01	L5=7
+item	2	8	S1=item 1	L5=30
+item	3	8	S1=item 001	L5=2
+item	4	8	S1=item 1	L5=11
+item	5	8	S1=item 0001	L5=5
+item	6	8	S1=item 01	L5=19
+item	7	8	S1=item 00001	L5=3
+end
+
+case	names_after_carried_values_three_keys	NM,AL,BR-	0
+item	1	8	S1=x 01	L5=7	L28=1
+item	2	8	S1=x 1	L5=30	L28=01
+item	3	8	S1=x 001	L5=2	L28=3
+item	4	8	S1=x 1	L5=11	L28=2
+item	5	8	S1=x 0001	L5=5	L28=1
+item	6	8	S1=x 01	L5=19	L28=3
+item	7	8	S1=x 00001	L5=3	L28=2
+end
+
+# Found by search: here the carried-over burdens change where .NET's sort
+# leaves the names it calls equal.
+case	names_after_carried_values_found	NM,BR	0
+item	1	8	S1=x 01	L5=29
+item	2	8	S1=x 1	L5=5
+item	3	8	S1=x 2	L5=23
+item	4	8	S1=x 00001	L5=36
+item	5	8	S1=x 02	L5=10
+item	6	8	S1=x 2	L5=11
+item	7	8	S1=x 0001	L5=6
+item	8	8	S1=x 01	L5=17
+item	9	8	S1=x 1	L5=37
+item	10	8	S1=x 02	L5=24
+item	11	8	S1=x 01	L5=17
+end

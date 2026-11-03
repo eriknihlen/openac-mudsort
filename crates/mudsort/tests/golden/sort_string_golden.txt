@@ -1,0 +1,18 @@
+[OC,ES,CV,AL-,AB-,DG-,ED-,ML,MA,NM]	OC,ES,CV,AL-,AB-,ED-,ML,NM	OC,ES,CV,AL-,AB-,ED-,ML,NM
+[OC,EQ,CV,AL-,AB-,DB-,ED-,ML,MT,NM]	OC,EQ,CV,AL-,AB-,DB-,ED-,ML,MT,NM	OC,EQ,CV,AL-,AB-,DB-,ED-,ML,MT,NM
+[OC,EP,MA,AL-,MX-]	OC,EP,AL-,MX-	OC,EP,AL-,MX-
+[AL-,MX-]	AL-,MX-	AL-,MX-
+[BR-]	BR-	BR-
+[oc,al-,nm]		OC,AL-,NM
+[AL,AL-]	AL-,AL-	AL-,AL-
+[AL-,AL]	AL,AL	AL,AL
+[ AL]		
+[AL- ]	AL	AL
+[ALX]	AL	AL
+[AL-X]	AL	AL
+[AL--]	AL	AL
+[A]		
+[]		
+[OC,,NM]	OC,NM	OC,NM
+[ZZ,NM]	NM	NM
+[nm-,Oc]		NM-,OC
