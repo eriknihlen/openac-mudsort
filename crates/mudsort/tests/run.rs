@@ -529,7 +529,7 @@ fn the_preview_lists_the_order_known_so_far_without_starting() {
             (C, RowState::NeedsId)
         ]
     );
-    assert_eq!(h.plugin.columns(), vec!["Armor level"]);
+    assert_eq!(h.plugin.columns(), vec!["AL"]);
     assert_eq!(h.plugin.sorter().phase(), Phase::Idle);
     assert!(h.sim.log.is_empty());
 }

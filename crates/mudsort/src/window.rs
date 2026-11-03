@@ -972,14 +972,14 @@ impl Window {
                 Err(error) => (Vec::new(), Some(format!("Cannot sort: {error}"))),
             }
         };
-        let columns: Vec<&str> = if show_run {
+        let columns: Vec<String> = if show_run {
             app.columns()
         } else {
             parsed
                 .keys
                 .iter()
                 .take(run::SHOWN_KEYS)
-                .map(|k| k.flag.display_name())
+                .map(|k| k.flag.code().to_owned())
                 .collect()
         };
         let me = app.me().map(|me| me.id);
@@ -1127,7 +1127,7 @@ impl Window {
             .inspected
             .and_then(|id| self.shown.iter().position(|s| *s == id))
             .map_or(-1, index);
-        let header = |i: usize| columns.get(i).copied().unwrap_or("").to_owned();
+        let header = |i: usize| columns.get(i).cloned().unwrap_or_default();
         let mut to_items: Vec<String> = choices.iter().map(|c| c.label.clone()).collect();
         to_items.push(GIVE_TO_PLAYER.to_owned());
         values.extend([

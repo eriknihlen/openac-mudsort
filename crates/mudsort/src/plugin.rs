@@ -313,17 +313,18 @@ impl MudSort {
         self.sorter.rows()
     }
 
-    /// The names of the keys the rows show values for: the run's while it
-    /// has one, else the settings'.
+    /// The codes of the keys the rows show values for (the columns are
+    /// narrow; the recipe chips above spell the names out): the run's while
+    /// it has one, else the settings'.
     #[must_use]
-    pub fn columns(&self) -> Vec<&'static str> {
+    pub fn columns(&self) -> Vec<String> {
         let keys = match self.sorter.config() {
             Some(config) if self.sorter.phase() != run::Phase::Idle => config.keys.clone(),
             _ => self.settings.keys().keys,
         };
         keys.iter()
             .take(run::SHOWN_KEYS)
-            .map(|key| key.flag.display_name())
+            .map(|key| key.flag.code().to_owned())
             .collect()
     }
 

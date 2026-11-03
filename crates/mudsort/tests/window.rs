@@ -232,7 +232,7 @@ fn the_preview_shows_the_end_result_with_icons_values_and_states() {
         h.value("RowIcons"),
         TypedValue::UintList(vec![C, B, A, PLATE])
     );
-    assert_eq!(h.text("Column0"), "Armor level");
+    assert_eq!(h.text("Column0"), "AL");
     assert_eq!(h.text("Column1"), "");
     assert_eq!(h.texts("RowValues0"), ["10", "20", "30", "50"]);
     assert_eq!(
@@ -462,7 +462,7 @@ fn recipe_edits_update_the_sort_string_and_are_saved() {
     assert_eq!(sort_string(&h), "AL,NM-");
     assert_eq!(h.text("SortString"), "AL,NM-");
     h.click("ShowSort");
-    assert_eq!(h.text("Column1"), "Name");
+    assert_eq!(h.text("Column1"), "NM");
     h.click("ShowRecipe");
 
     h.act("SetReverse", Av::Bool(true));
