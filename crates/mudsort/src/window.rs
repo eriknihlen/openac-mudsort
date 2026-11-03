@@ -1,8 +1,8 @@
 //! The window: one themed panel (`markup/mudsort.xml`) with four tabs over
 //! the plugin's view model, [`MudSort`]: Sort (from, to, the filters, the
-//! recipe at a glance, the live preview of the move order, the meter and
-//! the one Start/Stop button), Recipe, Presets and Options (with the
-//! Inspector, which replaces mudsort's property dump to chat).
+//! recipe at a glance, the live preview of where the items end up, the
+//! meter and the one Start/Stop button), Recipe, Presets and Options (with
+//! the Inspector, which replaces mudsort's property dump to chat).
 //!
 //! The SDK pushes values: [`Window::refresh`] computes every bound value and
 //! the panel sends only what changed. It runs after each control the player
@@ -36,6 +36,14 @@ pub const ICON: u32 = 10706;
 
 /// The To menu's entry that gives the items to the selected player.
 pub const GIVE_TO_PLAYER: &str = "Give to selected player";
+
+/// The line under the preview for a pack or the chest: every item is put
+/// at the start slot, pushing the ones before it down, so the items end up
+/// in the reverse of the order they move in, and the list shows that.
+pub const ORDER_NOTE: &str = "Moves happen bottom to top; the list shows the end result.";
+/// The line under the preview when giving to a player: a player's pack has
+/// no slot to aim at, so the list is the order the items are given in.
+pub const GIVE_ORDER_NOTE: &str = "Items are given top to bottom.";
 
 /// The class filter menu: mudsort's choices (`mainView.xml`,
 /// `cmbObjClassFilters`) with its group headings, which pick nothing.
@@ -323,6 +331,7 @@ pub const BINDINGS: &[(&str, K)] = &[
     ("RowValues2", K::TextList),
     ("RowStates", K::TextList),
     ("RowStateColors", K::UintList),
+    ("OrderNote", K::Text),
     // Sort: the run.
     ("MeterFill", K::Float),
     ("MeterText", K::Text),
@@ -950,7 +959,7 @@ impl Window {
 
         // The rows: the run's while it has them, else what a run would do;
         // or why there are none.
-        let (rows, problem): (Vec<PreviewRow>, Option<String>) = if show_run {
+        let (mut rows, problem): (Vec<PreviewRow>, Option<String>) = if show_run {
             (app.rows(), None)
         } else if app.me().is_none() {
             (Vec::new(), Some("Log in to sort".to_owned()))
@@ -973,6 +982,45 @@ impl Window {
                 .map(|k| k.flag.display_name())
                 .collect()
         };
+        let me = app.me().map(|me| me.id);
+        let dest = if show_run {
+            app.sorter().config().map_or(app.dest(), |c| c.dest)
+        } else {
+            app.dest()
+        };
+
+        // Where the items end up. Each one is put at the start slot, pushing
+        // those before it down, so they end in the reverse of the move order
+        // (the run keeps the move order; only the list shows the result),
+        // at the start slot and on. A player's pack has no slot to aim at:
+        // the list is the order of giving.
+        let giving =
+            me.is_some_and(|me| matches!(run::classify(host, dest, me), Some(Place::Player(_))));
+        let start_slot = if show_run {
+            app.sorter()
+                .config()
+                .map_or(settings.start_slot, |c| c.start_slot)
+        } else {
+            settings.start_slot
+        };
+        let (row_numbers, order_note): (Vec<String>, &str) = if giving {
+            (
+                (1..=rows.len()).map(|n| n.to_string()).collect(),
+                GIVE_ORDER_NOTE,
+            )
+        } else {
+            rows.reverse();
+            (
+                (0..rows.len())
+                    .map(|i| {
+                        i64::from(start_slot)
+                            .saturating_add(i64::try_from(i).unwrap_or(i64::MAX))
+                            .to_string()
+                    })
+                    .collect(),
+                ORDER_NOTE,
+            )
+        };
         self.shown = rows.iter().map(|r| r.id).collect();
         let need = rows.iter().filter(|r| r.state == RowState::NeedsId).count();
         let column = |i: usize| -> Vec<String> {
@@ -982,12 +1030,6 @@ impl Window {
         };
 
         // The meter.
-        let me = app.me().map(|me| me.id);
-        let dest = if show_run {
-            app.sorter().config().map_or(app.dest(), |c| c.dest)
-        } else {
-            app.dest()
-        };
         let dest_name = Self::place_name(host, &choices, dest);
         let progress = app.progress();
         let (meter_fill, meter_text) = match phase {
@@ -1113,13 +1155,8 @@ impl Window {
             ("Chips", chips.into()),
             ("PreviewSummary", summary.into()),
             ("PreviewSelected", preview_selected.into()),
-            (
-                "RowNumbers",
-                (1..=rows.len())
-                    .map(|n| n.to_string())
-                    .collect::<Vec<_>>()
-                    .into(),
-            ),
+            ("RowNumbers", row_numbers.into()),
+            ("OrderNote", order_note.into()),
             ("RowIcons", self.shown.clone().into()),
             (
                 "RowNames",

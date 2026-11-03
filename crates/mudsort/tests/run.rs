@@ -184,6 +184,109 @@ fn a_refusal_marks_the_row_failed_and_the_run_goes_on() {
 }
 
 #[test]
+fn a_run_with_failed_rows_says_how_many_and_the_first_reason() {
+    let mut h = ready();
+    h.ms("start");
+    h.sim
+        .move_answers
+        .push_back(ItemResult::because(ItemStatus::Refused, "It is attuned."));
+    h.sim
+        .move_answers
+        .push_back(ItemResult::because(ItemStatus::Refused, "It is too heavy."));
+    h.run(40);
+    assert_eq!(h.plugin.sorter().phase(), Phase::Done);
+    // mudsort's own lines as they were, then the count and the first
+    // row's reason.
+    assert_eq!(
+        h.sim.fake.submitted,
+        vec![format!("/tell {NAME}, done sorting!")]
+    );
+    let chat = h.chat();
+    assert_eq!(
+        chat[chat.len() - 2..],
+        [
+            "[mudsort]: done sorting items!",
+            "[mudsort]: 2 items could not be moved: It is attuned."
+        ]
+    );
+
+    // One failed row: "item".
+    let mut h = ready();
+    h.ms("start");
+    h.sim
+        .move_answers
+        .push_back(ItemResult::because(ItemStatus::Refused, "It is attuned."));
+    h.run(40);
+    assert_eq!(
+        h.chat().last().unwrap(),
+        "[mudsort]: 1 item could not be moved: It is attuned."
+    );
+}
+
+/// Sorting the three gems into the open chest.
+fn into_the_chest() -> Harness {
+    let mut h = ready();
+    h.sim.open_chest();
+    h.ms(&format!("set dest {CHEST}"));
+    h.ms("start");
+    h
+}
+
+#[test]
+fn the_chest_closing_mid_run_stops_the_run_with_one_line() {
+    let mut h = into_the_chest();
+    until_a_move_is_in_flight(&mut h);
+    // A goes in; then the player walks away and the chest closes before
+    // the next put, which the client refuses.
+    let event = h.sim.answer_move(0).unwrap();
+    h.sim.close_chest();
+    h.send(event);
+    h.run(40);
+    assert_eq!(h.plugin.sorter().phase(), Phase::Done);
+    // B's put was refused and C was never asked for.
+    assert_eq!(
+        h.sim.moves(),
+        [A, B]
+            .map(|id| Req::Put {
+                id,
+                chest: CHEST,
+                slot: 0
+            })
+            .to_vec()
+    );
+    let rows = h.plugin.rows();
+    assert_eq!(rows[0].state, RowState::Moved);
+    for row in &rows[1..] {
+        assert_eq!(row.state, RowState::Failed);
+        assert_eq!(row.note.as_deref(), Some("the chest was closed"));
+    }
+    let chat = h.chat();
+    assert_eq!(
+        chat[chat.len() - 2..],
+        [
+            "[mudsort]: done sorting items!",
+            "[mudsort]: 2 items could not be moved: the chest was closed"
+        ]
+    );
+}
+
+#[test]
+fn a_put_refused_while_the_chest_is_still_open_fails_only_its_row() {
+    let mut h = into_the_chest();
+    h.sim
+        .move_answers
+        .push_back(ItemResult::of(ItemStatus::InvalidTarget));
+    h.run(40);
+    assert_eq!(h.plugin.sorter().phase(), Phase::Done);
+    let rows = h.plugin.rows();
+    assert_eq!(rows[0].state, RowState::Failed);
+    assert_eq!(rows[0].note.as_deref(), Some("InvalidTarget"));
+    assert_eq!(rows[1].state, RowState::Moved);
+    assert_eq!(rows[2].state, RowState::Moved);
+    assert_eq!(h.sim.contents(CHEST), vec!["Gem C", "Gem B"]);
+}
+
+#[test]
 fn a_move_the_server_refuses_fails_its_row() {
     let mut h = ready();
     h.ms("start");

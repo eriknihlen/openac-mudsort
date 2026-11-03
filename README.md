@@ -11,7 +11,8 @@ the sort, the computed keys, item selection) is ported and pinned to
 mudsort's own behaviour. The run (identify, then move one item at a time
 into a pack, the open chest or another player), the `/ms` commands and the
 per-character settings and presets work, and so does the window (Sort, Recipe,
-Presets and Options, with a live preview of the move order and an Inspector).
+Presets and Options, with a live preview of where the items end up and an
+Inspector).
 
 ```powershell
 scripts/check.ps1   # format, lint, test, build target/wasm32-unknown-unknown/release/mudsort.wasm

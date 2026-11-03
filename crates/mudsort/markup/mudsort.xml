@@ -74,6 +74,7 @@
       <column type="text" header="{Column2}" width="50" items="{RowValues2}" />
       <column type="text" header="State" items="{RowStates}" colors="{RowStateColors}" />
     </list>
+    <label text="{OrderNote}" color="theme:muted|#FFC7B98F" />
 
     <group w="464" h="22">
       <meter x="0" y="0" w="464" h="22" fill="{MeterFill}" color="theme:border|#FF61573B"

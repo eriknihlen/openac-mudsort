@@ -11,7 +11,9 @@
 //!   finished (MossTank's `stack_cram.rs` controller: one move, then wait for
 //!   `last_inventory_completion` to change or the client to stop being
 //!   busy).
-//! - **Done**: chat lines, and `/tell <self>, done sorting!` when asked.
+//! - **Done**: chat lines, and `/tell <self>, done sorting!` when asked;
+//!   one more line when moves failed. A run into the chest stops when the
+//!   chest is closed.
 //!
 //! The run is plain data for the window to show: [`Sorter::progress`] and
 //! [`Sorter::rows`], the exact move order with each row's state.
@@ -37,6 +39,10 @@ pub const MAX_BUSY_ANSWERS: u32 = 80;
 
 /// How many sort keys a row shows.
 pub const SHOWN_KEYS: usize = 3;
+
+/// The note on every row left when a run into the chest stops because the
+/// chest was closed.
+pub const CHEST_CLOSED: &str = "the chest was closed";
 
 /// A container a sort reads from or puts into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -623,7 +629,8 @@ impl Sorter {
                 self.rows[self.next].note = Some("joined a stack".to_owned());
                 continue;
             }
-            let result = request(host, id, row.step, dest, config.start_slot);
+            let step = row.step;
+            let result = request(host, id, step, dest, config.start_slot);
             match result.status {
                 ItemStatus::Started => {
                     self.rows[self.next].state = RowState::Moving;
@@ -650,6 +657,22 @@ impl Sorter {
                         "the client was not available"
                     };
                     self.fail(self.next, why.to_owned());
+                }
+                // A put into the chest refused because no chest is open any
+                // more: none of the rest can go in, so the run stops here
+                // rather than asking for each of them.
+                ItemStatus::InvalidTarget
+                    if dest.is_chest()
+                        && step == Step::Place
+                        && host.loot_state().current_container_id != dest.id() =>
+                {
+                    for row in &mut self.rows[self.next..] {
+                        if !matches!(row.state, RowState::Moved | RowState::Failed) {
+                            row.state = RowState::Failed;
+                            row.note = Some(CHEST_CLOSED.to_owned());
+                        }
+                    }
+                    self.changed();
                 }
                 other => {
                     let why = result.notice.unwrap_or_else(|| format!("{other:?}"));
@@ -690,6 +713,15 @@ impl Sorter {
             host.chat_submit(&format!("/tell {name}, done sorting!"));
         }
         chat::say(host, "done sorting items!");
+        // mudsort said nothing of a move that failed; one line says how
+        // many did, and why the first (in move order) did.
+        let mut failed = self.rows.iter().filter(|row| row.state == RowState::Failed);
+        if let Some(first) = failed.next() {
+            let count = failed.count() + 1;
+            let why = first.note.as_deref().unwrap_or("no reason given");
+            let items = if count == 1 { "item" } else { "items" };
+            chat::say(host, &format!("{count} {items} could not be moved: {why}"));
+        }
     }
 
     /// How far the run is.

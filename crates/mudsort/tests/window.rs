@@ -180,7 +180,7 @@ fn the_class_and_name_filters_change_the_preview() {
     let mut h = window();
     assert_eq!(
         h.texts("RowNames"),
-        ["Breastplate", "Gem A", "Gem B", "Gem C"]
+        ["Gem C", "Gem B", "Gem A", "Breastplate"]
     );
     assert_eq!(h.text("ClassSelected"), "None");
     assert_eq!(h.texts("ClassItems").len(), window::CLASS_FILTERS.len());
@@ -188,7 +188,7 @@ fn the_class_and_name_filters_change_the_preview() {
     h.type_text("SetClass", "Gem");
     assert_eq!(h.plugin.settings().class_filter, "Gem");
     assert_eq!(h.text("ClassSelected"), "Gem");
-    assert_eq!(h.texts("RowNames"), ["Gem A", "Gem B", "Gem C"]);
+    assert_eq!(h.texts("RowNames"), ["Gem C", "Gem B", "Gem A"]);
     // A heading picks nothing.
     h.type_text("SetClass", "— Equipment —");
     assert_eq!(h.plugin.settings().class_filter, "Gem");
@@ -216,30 +216,37 @@ fn the_class_and_name_filters_change_the_preview() {
 }
 
 #[test]
-fn the_preview_shows_the_move_order_with_icons_values_and_states() {
-    let h = window();
-    assert_eq!(h.texts("RowNumbers"), ["1", "2", "3", "4"]);
+fn the_preview_shows_the_end_result_with_icons_values_and_states() {
+    let mut h = window();
+    // Every item goes in at the start slot, pushing the earlier ones down,
+    // so the items end up in the reverse of the move order (Breastplate,
+    // A, B, C): the list shows that end result, each row at its slot.
+    assert_eq!(h.texts("RowNumbers"), ["0", "1", "2", "3"]);
+    assert_eq!(
+        h.text("OrderNote"),
+        "Moves happen bottom to top; the list shows the end result."
+    );
     // The icon column carries the item ids (the client composes each one's
     // inventory icon).
     assert_eq!(
         h.value("RowIcons"),
-        TypedValue::UintList(vec![PLATE, A, B, C])
+        TypedValue::UintList(vec![C, B, A, PLATE])
     );
     assert_eq!(h.text("Column0"), "Armor level");
     assert_eq!(h.text("Column1"), "");
-    assert_eq!(h.texts("RowValues0"), ["50", "30", "20", "10"]);
+    assert_eq!(h.texts("RowValues0"), ["10", "20", "30", "50"]);
     assert_eq!(
         h.texts("RowStates"),
-        ["Ready", "Ready", "Needs ID", "Needs ID"]
+        ["Needs ID", "Needs ID", "Ready", "Ready"]
     );
     let palette = window::Palette::CLASSIC;
     assert_eq!(
         h.value("RowStateColors"),
         TypedValue::UintList(vec![
-            palette.text,
-            palette.text,
             window::NEEDS_ID_COLOR,
-            window::NEEDS_ID_COLOR
+            window::NEEDS_ID_COLOR,
+            palette.text,
+            palette.text
         ])
     );
     assert_eq!(h.text("PreviewSummary"), "4 items · 2 need identify");
@@ -247,6 +254,57 @@ fn the_preview_shows_the_move_order_with_icons_values_and_states() {
         h.text("MeterText"),
         "Ready — 4 items to Main pack, 2 to identify first"
     );
+    // A row picked in the list is the item shown there.
+    h.act("SelectRow", Av::Int(0));
+    assert_eq!(h.plugin.window().unwrap().inspected(), Some(C));
+    // The numbers are the slots, from the start slot on.
+    h.act("SetStartSlot", Av::Int(5));
+    assert_eq!(h.texts("RowNumbers"), ["5", "6", "7", "8"]);
+}
+
+#[test]
+fn giving_to_a_player_lists_the_give_order() {
+    let mut h = window();
+    h.sim.selected = Some(HORAN);
+    h.type_text("SetTo", GIVE_TO_PLAYER);
+    assert_eq!(h.plugin.dest(), HORAN);
+    // A player's pack has no slot to aim at: the list is the order the
+    // items are given in, numbered from 1.
+    assert_eq!(
+        h.texts("RowNames"),
+        ["Breastplate", "Gem A", "Gem B", "Gem C"]
+    );
+    assert_eq!(h.texts("RowNumbers"), ["1", "2", "3", "4"]);
+    assert_eq!(h.text("OrderNote"), "Items are given top to bottom.");
+}
+
+#[test]
+fn a_run_lists_its_items_where_they_end_up_from_its_own_start_slot() {
+    let mut h = window();
+    h.type_text("SetClass", "Gem");
+    h.type_text("SetTo", "Pack 1 · Pack 1 · 0 of 24");
+    h.act("SetStartSlot", Av::Int(2));
+    h.click("Run");
+    // The setting changes; the run keeps the slot it started with.
+    h.act("SetStartSlot", Av::Int(7));
+    for _ in 0..40 {
+        h.tick();
+        if let Some(event) = h.sim.answer_appraisal() {
+            h.send(event);
+        }
+        if h.sim.in_flight.is_some() {
+            break;
+        }
+    }
+    h.settle();
+    // A moves first, so it ends up last.
+    assert_eq!(h.texts("RowNames"), ["Gem C", "Gem B", "Gem A"]);
+    assert_eq!(h.texts("RowStates"), ["Ready", "Ready", "Moving"]);
+    assert_eq!(h.texts("RowNumbers"), ["2", "3", "4"]);
+    // The run itself still keeps the move order.
+    let rows = h.plugin.rows();
+    assert_eq!(rows[0].id, A);
+    assert_eq!(rows[0].state, mudsort::run::RowState::Moving);
 }
 
 #[test]
@@ -297,7 +355,7 @@ fn the_preview_follows_the_inventory_and_a_quiet_tick_sends_nothing() {
     h.settle();
     assert_eq!(
         h.texts("RowNames"),
-        ["Breastplate", "Gem D", "Gem A", "Gem B", "Gem C"]
+        ["Gem C", "Gem B", "Gem A", "Gem D", "Breastplate"]
     );
     assert_eq!(pushes(&h), before + 1);
 }
@@ -337,7 +395,7 @@ fn start_and_stop_from_the_button_drive_the_run_and_the_meter() {
     assert_eq!(h.plugin.sorter().phase(), Phase::Moving);
     assert_eq!(h.text("Status"), "sorting…");
     assert_eq!(h.text("MeterText"), "Moving 1 of 3 to Pack 1 · Pack 1");
-    assert_eq!(h.texts("RowStates"), ["Moving", "Ready", "Ready"]);
+    assert_eq!(h.texts("RowStates"), ["Ready", "Ready", "Moving"]);
 
     h.run(40);
     assert_eq!(h.plugin.sorter().phase(), Phase::Done);
@@ -541,9 +599,9 @@ fn a_preview_row_or_the_world_selection_fills_the_inspector() {
     assert_eq!(h.value("InspectIcon"), TypedValue::Uint(0));
 
     h.click("ShowSort");
-    h.act("SelectRow", Av::Int(1));
+    h.act("SelectRow", Av::Int(2));
     assert_eq!(h.plugin.window().unwrap().inspected(), Some(A));
-    assert_eq!(h.value("PreviewSelected"), TypedValue::Int(1));
+    assert_eq!(h.value("PreviewSelected"), TypedValue::Int(2));
     h.click("ShowOptions");
     assert_eq!(h.text("InspectName"), "Gem A");
     assert_eq!(h.text("InspectState"), "Gem · identified");
@@ -594,7 +652,7 @@ fn plus_in_the_inspector_adds_the_key() {
 #[test]
 fn an_item_given_away_leaves_the_inspector_and_the_preview() {
     let mut h = window();
-    h.act("SelectRow", Av::Int(0));
+    h.act("SelectRow", Av::Int(3));
     h.click("ShowOptions");
     assert_eq!(h.text("InspectName"), "Breastplate");
     h.sim
@@ -610,7 +668,7 @@ fn an_item_given_away_leaves_the_inspector_and_the_preview() {
     h.settle();
     assert_eq!(h.text("InspectName"), "Nothing selected");
     h.click("ShowSort");
-    assert_eq!(h.texts("RowNames"), ["Gem A", "Gem B", "Gem C"]);
+    assert_eq!(h.texts("RowNames"), ["Gem C", "Gem B", "Gem A"]);
 }
 
 #[test]

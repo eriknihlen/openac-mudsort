@@ -182,6 +182,11 @@ impl Sim {
         self.chest = CHEST;
     }
 
+    /// Closes the chest (walking away, or the chest's own timer).
+    pub fn close_chest(&mut self) {
+        self.chest = 0;
+    }
+
     fn renumber(list: &mut [InventoryItem], container: u32) {
         let mut members: Vec<&mut InventoryItem> = list
             .iter_mut()
@@ -410,6 +415,14 @@ impl Sim {
         if !known && !matches!(request, Req::PickUp { .. }) {
             self.log.push(request);
             return ItemResult::because(ItemStatus::InvalidItem, "That item is gone.");
+        }
+        // The client's put: `InvalidTarget`, without a notice, when the
+        // container is not the open one (`put_in_open_container`).
+        if let Req::Put { chest, .. } = request
+            && (self.chest == 0 || chest != self.chest)
+        {
+            self.log.push(request);
+            return ItemResult::of(ItemStatus::InvalidTarget);
         }
         if let Some(answer) = self.move_answers.pop_front() {
             self.log.push(request);
