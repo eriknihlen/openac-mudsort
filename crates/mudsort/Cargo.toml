@@ -1,0 +1,18 @@
+[package]
+name = "mudsort"
+description = "MudSort as an openAC-rust WebAssembly plugin: sorts a pack's items by a recipe of item properties and moves them, in order, into a pack, a chest or another player."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+# cdylib: the plugin's .wasm; rlib: the native tests link it.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+openac-plugin.workspace = true
+
+[lints]
+workspace = true

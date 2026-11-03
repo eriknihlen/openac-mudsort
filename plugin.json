@@ -1,0 +1,13 @@
+{
+  "id": "openac.mudsort",
+  "displayName": "MudSort",
+  "version": "0.1.0",
+  "entry": "mudsort.wasm",
+  "apiVersion": "1.5",
+  "minHostVersion": "0.1.10",
+  "permissionsVersion": 1,
+  "permissions": [
+    { "name": "chat", "note": "Shows sorting progress in chat and sends you a /tell when a sort is done, as mudsort did." },
+    { "name": "clipboard", "note": "Copies a sort recipe to the clipboard so you can paste it elsewhere." }
+  ]
+}
