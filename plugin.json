@@ -1,10 +1,10 @@
 {
   "id": "openac.mudsort",
   "displayName": "MudSort",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "entry": "mudsort.wasm",
   "apiVersion": "1.5",
-  "minHostVersion": "0.1.10",
+  "minHostVersion": "0.1.11",
   "permissionsVersion": 1,
   "permissions": [
     { "name": "chat", "note": "Shows sorting progress in chat and sends you a /tell when a sort is done, as mudsort did." },
